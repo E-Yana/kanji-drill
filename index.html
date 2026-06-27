@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>かんじドリル</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1a4d80" />
+  <!-- iOS ホーム画面追加用 -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="かんじドリル" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ ホーム画面 ============ -->
+  <section id="screen-home" class="screen">
+    <header class="app-header">
+      <h1>かんじ ドリル</h1>
+    </header>
+
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="stat-num"><span id="home-streak">0</span><span class="unit">日</span></div>
+        <div class="stat-label">🔥 れんぞく</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num"><span id="home-count">0</span><span class="unit">問</span></div>
+        <div class="stat-label">きょうの問題</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num"><span id="home-mastered">0</span><span class="unit">字</span></div>
+        <div class="stat-label">⭐ おぼえた</div>
+      </div>
+    </div>
+
+    <p id="home-done-note" class="done-note hidden">きょうのぶんは おわったよ！えらい！🎉</p>
+
+    <button id="btn-start" class="big-btn primary">▶ はじめる</button>
+
+    <div class="panel">
+      <h2>にがてな かんじ</h2>
+      <div id="home-weak"></div>
+    </div>
+
+    <button id="btn-manage" class="text-btn">⚙ 問題のとりこみ・せってい</button>
+  </section>
+
+  <!-- ============ クイズ画面 ============ -->
+  <section id="screen-quiz" class="screen hidden">
+    <div class="quiz-top">
+      <button id="btn-quit" class="text-btn small">やめる</button>
+      <div id="quiz-progress" class="progress-badge">1 / 10</div>
+    </div>
+
+    <div class="question-area">
+      <p class="instruction">よみを 見て、□に かんじを 書こう（紙に書いてね）</p>
+      <p id="quiz-reading" class="reading-cue"></p>
+      <p id="quiz-prompt" class="prompt"></p>
+    </div>
+
+    <button id="btn-reveal" class="big-btn primary">答えを見る</button>
+
+    <div id="reveal-area" class="reveal hidden">
+      <div class="answer-box">
+        <div id="reveal-answer" class="answer-kanji"></div>
+        <div id="reveal-word" class="answer-word"></div>
+      </div>
+      <p class="self-check-label">じぶんの 字と くらべてね</p>
+      <div class="grade-row">
+        <button id="btn-wrong" class="grade-btn ng">✕ まちがえた</button>
+        <button id="btn-correct" class="grade-btn ok">○ できた</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 結果画面 ============ -->
+  <section id="screen-result" class="screen hidden">
+    <header class="app-header"><h1>おつかれさま！</h1></header>
+    <div class="result-score-box">
+      <div id="result-score" class="result-score">0 / 0</div>
+      <p id="result-msg" class="result-msg"></p>
+      <p id="result-streak" class="result-streak"></p>
+    </div>
+    <div class="panel">
+      <div id="result-weak"></div>
+    </div>
+    <button id="btn-home" class="big-btn primary">ホームへ もどる</button>
+  </section>
+
+  <!-- ============ 管理画面 ============ -->
+  <section id="screen-manage" class="screen hidden">
+    <header class="app-header"><h1>問題のとりこみ・せってい</h1></header>
+
+    <div class="panel">
+      <h2>① Geminiの けっかを はりつけて とりこむ</h2>
+      <p class="muted small">
+        漢字ドリル/ノートの まちがいを 写真にとり、Geminiに 書き起こしてもらった
+        JSONを そのまま下に はりつけて「とりこむ」を おしてください。
+        とりこんだ字は つぎの日から いちばん先に 出ます。
+      </p>
+      <textarea id="import-text" rows="7" placeholder='[ { "prompt": "目を{__}ます", "answer": "覚", "reading": "さ", "word": "覚ます" } ]'></textarea>
+      <button id="btn-import" class="mid-btn primary">この内ようを とりこむ</button>
+      <p id="import-msg" class="form-msg"></p>
+    </div>
+
+    <div class="panel">
+      <h2>② 1問だけ 手で ついか</h2>
+      <label>れいぶん（書く場所は <code>{__}</code> と入力）
+        <input id="add-prompt" type="text" placeholder="目を{__}ます" />
+      </label>
+      <label>答えの かんじ
+        <input id="add-answer" type="text" placeholder="覚" />
+      </label>
+      <label>読み・おくりがな
+        <input id="add-reading" type="text" placeholder="さ" />
+      </label>
+      <label>こたえの ことば（なくてもOK）
+        <input id="add-word" type="text" placeholder="覚ます" />
+      </label>
+      <button id="btn-add" class="mid-btn primary">ついかする</button>
+      <p id="add-msg" class="form-msg"></p>
+    </div>
+
+    <div class="panel">
+      <h2>せってい</h2>
+      <label>新しい漢字を 1日に 出す数（復習・4年バンク）
+        <select id="setting-newperday">
+          <option value="3">3問ずつ（ゆっくり）</option>
+          <option value="5">5問ずつ</option>
+          <option value="10">10問ずつ（しっかり）</option>
+        </select>
+      </label>
+      <p class="muted small">※ あなたが登録した「優先の問題」は、この数にしばられず先に出ます。</p>
+    </div>
+
+    <div class="panel">
+      <h2>とりこんだ 問題</h2>
+      <div id="manage-list"></div>
+    </div>
+
+    <div class="panel">
+      <h2>③ バックアップ</h2>
+      <p class="muted small">きろくは このiPadだけに ほぞんされます。きしゅへんこうの前などに 書き出しておくと安心です。</p>
+      <button id="btn-export" class="mid-btn">きろくを 書き出す</button>
+      <label class="restore-label">きろくを よみこむ（ふくげん）
+        <input id="restore-file" type="file" accept="application/json,.json" />
+      </label>
+      <p id="restore-msg" class="form-msg"></p>
+    </div>
+
+    <button id="btn-back" class="big-btn">ホームへ もどる</button>
+  </section>
+
+</div>
+
+<script src="kanji_data.js"></script>
+<script src="grade3_data.js"></script>
+<script src="priority_data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

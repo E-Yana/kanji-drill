@@ -1,0 +1,5 @@
+# 個人データ（お子さんの間違えた漢字リスト）は公開リポジトリに含めない
+priority_data.js
+
+# macOS
+.DS_Store
