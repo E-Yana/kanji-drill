@@ -1,6 +1,6 @@
 // service worker: オフラインで使えるよう、アプリ一式をキャッシュする
 // 中身を更新したら CACHE バージョン名を上げること（古いキャッシュを破棄）
-const CACHE = "kanji-drill-v5";
+const CACHE = "kanji-drill-v6";
 // 必須アセット（必ずキャッシュ）。priority_data.js は個人データのため公開版には無いことがある→任意扱い
 const ASSETS = [
   "./",

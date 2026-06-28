@@ -11,6 +11,7 @@
 const STORE_KEY = "kanjiDrill_v1"; // localStorage のキー
 const DEFAULT_DAILY = 10; // 1日の出題数
 const DEFAULT_NEW_PER_DAY = 3; // 1日に増やす新出漢字の数（復習/4年バンク）
+const BACKUP_REMIND_DAYS = 14; // 最終バックアップからこの日数が経ったら書き出しを促す
 // Leitner の箱ごとの「次に出すまでの日数」（箱が上がるほど間隔が伸びる）
 const INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 15 };
 const MAX_BOX = 5;
@@ -46,6 +47,7 @@ function loadStore() {
     meta: {
       streak: 0,
       lastStudyDate: null,
+      lastBackup: null, // 最後に「きろくを書き出した」日（YYYY-MM-DD）
       settings: { dailyCount: DEFAULT_DAILY, newPerDay: DEFAULT_NEW_PER_DAY },
     },
     session: null, // 当日セッション（途中再開用）
@@ -242,7 +244,22 @@ function renderHome() {
         .join("") +
       "</ul>";
   }
+
+  // バックアップ促し（保護者向け）: 進捗があり、最後の書き出しから一定日数たったら表示
+  updateBackupReminder(today);
+
   showScreen("home");
+}
+
+/** ホームの「きろくを書き出してね」促しの表示/非表示を更新する */
+function updateBackupReminder(today) {
+  const el = document.getElementById("home-backup-reminder");
+  if (!el) return;
+  const hasProgress = masteredCount() > 0 || weakList(1).length > 0;
+  const last = store.meta.lastBackup;
+  // 未書き出し(null)、または最終書き出し+N日が今日以前なら促す
+  const due = !last || addDays(last, BACKUP_REMIND_DAYS) <= today;
+  el.classList.toggle("hidden", !(hasProgress && due));
 }
 
 // --- クイズ画面 ----------------------------------------------
@@ -551,6 +568,9 @@ function exportData() {
   a.download = `kanji_drill_backup_${todayStr()}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  // 書き出した日を記録（ホームの「書き出してね」促しを止めるため）
+  store.meta.lastBackup = todayStr();
+  saveStore();
 }
 
 function restoreData(text) {
@@ -560,9 +580,11 @@ function restoreData(text) {
     store = {
       imported: parsed.imported || [],
       progress: parsed.progress || {},
-      meta: parsed.meta || { streak: 0, lastStudyDate: null, settings: { dailyCount: DEFAULT_DAILY } },
+      meta: parsed.meta || { streak: 0, lastStudyDate: null, lastBackup: null, settings: { dailyCount: DEFAULT_DAILY } },
       session: parsed.session || null,
     };
+    // 復元＝手元に新しい控えがある状態とみなし、促しをリセット
+    store.meta.lastBackup = todayStr();
     saveStore();
     return { ok: true, msg: "進捗を復元しました。" };
   } catch (e) {
@@ -590,19 +612,26 @@ function flashMsg(elId, result) {
 // ============================================================
 // イベント結線・初期化
 // ============================================================
+/** 管理画面（とりこみ・せってい・バックアップ）を開く */
+function openManage() {
+  renderManageList();
+  document.getElementById("import-msg").textContent = "";
+  document.getElementById("add-msg").textContent = "";
+  // 新出ペースの選択を現在値に合わせる
+  document.getElementById("setting-newperday").value = String(
+    store.meta.settings.newPerDay ?? DEFAULT_NEW_PER_DAY
+  );
+  showScreen("manage");
+}
+
 function bindEvents() {
   // ホーム
   document.getElementById("btn-start").addEventListener("click", startSession);
-  document.getElementById("btn-manage").addEventListener("click", () => {
-    renderManageList();
-    document.getElementById("import-msg").textContent = "";
-    document.getElementById("add-msg").textContent = "";
-    // 新出ペースの選択を現在値に合わせる
-    document.getElementById("setting-newperday").value = String(
-      store.meta.settings.newPerDay ?? DEFAULT_NEW_PER_DAY
-    );
-    showScreen("manage");
-  });
+  document.getElementById("btn-manage").addEventListener("click", openManage);
+  // バックアップ促しをタップ → そのまま管理画面（書き出し）へ
+  document
+    .getElementById("home-backup-reminder")
+    .addEventListener("click", openManage);
   // 新出ペースの変更
   document.getElementById("setting-newperday").addEventListener("change", (e) => {
     store.meta.settings.newPerDay = parseInt(e.target.value, 10) || DEFAULT_NEW_PER_DAY;
@@ -664,6 +693,11 @@ function main() {
   seedPriorityOnce(); // 同梱の優先問題を初回だけ投入
   bindEvents();
   renderHome();
+
+  // ストレージ永続化を要求（iOS の自動削除を受けにくくする。失敗しても動作に影響なし）
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => {});
+  }
 
   // PWA: service worker 登録（http/https 環境のみ。file:// では何もしない）
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
