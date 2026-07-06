@@ -35,11 +35,16 @@
         <div class="stat-num"><span id="home-mastered">0</span><span class="unit">字</span></div>
         <div class="stat-label">⭐ おぼえた</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-num"><span id="home-vocab-mastered">0</span><span class="unit">ご</span></div>
+        <div class="stat-label">🗣 ことば</div>
+      </div>
     </div>
 
     <p id="home-done-note" class="done-note hidden">きょうのぶんは おわったよ！えらい！🎉</p>
 
     <button id="btn-start" class="big-btn primary">▶ はじめる</button>
+    <button id="btn-vocab-home" class="big-btn">🗣 ことばクイズ</button>
 
     <div class="panel">
       <h2>にがてな かんじ</h2>
@@ -90,7 +95,30 @@
     <div class="panel">
       <div id="result-weak"></div>
     </div>
+    <button id="btn-vocab-start" class="big-btn hidden">🗣 つづけて ことばクイズ</button>
     <button id="btn-home" class="big-btn primary">ホームへ もどる</button>
+  </section>
+
+  <!-- ============ ことばクイズ画面 ============ -->
+  <section id="screen-vocab" class="screen hidden">
+    <div class="quiz-top">
+      <button id="btn-vocab-quit" class="text-btn small">やめる</button>
+      <div id="vocab-progress" class="progress-badge">1 / 5</div>
+    </div>
+
+    <div class="question-area">
+      <p class="instruction">この ことばの いみは どれ？</p>
+      <p id="vocab-reading" class="reading-cue"></p>
+      <p id="vocab-word" class="prompt"></p>
+    </div>
+
+    <div id="vocab-choices" class="vocab-choices"></div>
+
+    <div id="vocab-feedback" class="reveal hidden">
+      <p id="vocab-feedback-msg" class="self-check-label"></p>
+      <p id="vocab-example" class="muted small"></p>
+      <button id="btn-vocab-next" class="big-btn primary">つぎへ</button>
+    </div>
   </section>
 
   <!-- ============ 管理画面 ============ -->
@@ -162,6 +190,7 @@
 <script src="kanji_data.js"></script>
 <script src="grade3_data.js"></script>
 <script src="priority_data.js"></script>
+<script src="vocab_data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

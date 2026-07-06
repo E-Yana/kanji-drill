@@ -256,6 +256,37 @@ html, body {
 .grade-btn.ng { background: var(--ng); box-shadow: 0 4px 0 #91291c; }
 .grade-btn:active { transform: translateY(2px); }
 
+/* ============ ことばクイズ画面 ============ */
+.vocab-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 14px 0;
+}
+.choice-btn {
+  padding: 18px 14px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.5;
+  border: 2px solid var(--main-light);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 2px 8px rgba(26, 77, 128, 0.06);
+}
+.choice-btn:active { transform: translateY(2px); }
+.choice-btn.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+.choice-btn.ng { background: var(--ng); border-color: var(--ng); color: #fff; }
+.choice-btn:disabled { cursor: default; }
+.choice-btn:disabled:not(.ok):not(.ng) { opacity: 0.5; }
+
+@media (max-width: 380px) {
+  .stat-row { flex-wrap: wrap; }
+  .stat-row .stat-card { flex-basis: 47%; }
+}
+
 /* ============ 結果画面 ============ */
 .result-score-box { text-align: center; margin: 20px 0; }
 .result-score { font-size: 56px; font-weight: 800; color: var(--main); }

@@ -12,6 +12,8 @@ const STORE_KEY = "kanjiDrill_v1"; // localStorage のキー
 const DEFAULT_DAILY = 10; // 1日の出題数
 const DEFAULT_NEW_PER_DAY = 3; // 1日に増やす新出漢字の数（復習/4年バンク）
 const BACKUP_REMIND_DAYS = 14; // 最終バックアップからこの日数が経ったら書き出しを促す
+const VOCAB_DAILY = 5; // ことばクイズの1日の出題数
+const VOCAB_NEW_PER_DAY = 3; // 1日に増やす新出語数
 // Leitner の箱ごとの「次に出すまでの日数」（箱が上がるほど間隔が伸びる）
 const INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 15 };
 const MAX_BOX = 5;
@@ -43,14 +45,15 @@ let store = loadStore();
 function loadStore() {
   const init = {
     imported: [], // 取り込んだ問題
-    progress: {}, // 問題ID -> 習熟度カード
+    progress: {}, // 問題ID -> 習熟度カード（漢字・語彙とも同居。idの接頭辞で区別）
     meta: {
       streak: 0,
       lastStudyDate: null,
       lastBackup: null, // 最後に「きろくを書き出した」日（YYYY-MM-DD）
       settings: { dailyCount: DEFAULT_DAILY, newPerDay: DEFAULT_NEW_PER_DAY },
     },
-    session: null, // 当日セッション（途中再開用）
+    session: null, // 当日セッション（漢字・途中再開用）
+    vocabSession: null, // 当日セッション（ことばクイズ・途中再開用）
   };
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -62,6 +65,7 @@ function loadStore() {
       progress: parsed.progress || {},
       meta: Object.assign(init.meta, parsed.meta || {}),
       session: parsed.session || null,
+      vocabSession: parsed.vocabSession || null,
     };
   } catch (e) {
     console.warn("ストア読込に失敗。初期化します", e);
@@ -95,6 +99,16 @@ function tierOf(p) {
 /** IDから問題を引く */
 function problemById(id) {
   return allProblems().find((p) => p.id === id) || null;
+}
+
+// --- 語彙バンク（ことばクイズ。漢字とは別枠で管理） -----------
+/** ことばクイズの全問題を返す（漢字の allProblems() には混ぜない） */
+function allVocabProblems() {
+  return window.VOCAB_PROBLEMS || [];
+}
+/** IDから語彙問題を引く */
+function vocabProblemById(id) {
+  return allVocabProblems().find((p) => p.id === id) || null;
 }
 
 /** 習熟度カードを取得（無ければ新規カードの初期値） */
@@ -145,6 +159,34 @@ function buildQueue() {
   return ordered.slice(0, dailyCount).map((x) => x.p.id);
 }
 
+/** ことばクイズの今日出す問題IDの配列を作る（buildQueue() と同じ3段構成の語彙版） */
+function buildVocabQueue() {
+  const today = todayStr();
+  const pool = allVocabProblems().map((p, idx) => ({
+    p,
+    c: getCard(p.id),
+    tier: p.priority ? 0 : 1,
+    idx,
+  }));
+
+  const reviews = pool
+    .filter((x) => x.c.history.length > 0 && x.c.dueDate <= today)
+    .sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      if (a.c.box !== b.c.box) return a.c.box - b.c.box;
+      return b.c.wrongCount - a.c.wrongCount;
+    });
+
+  const fresh = pool
+    .filter((x) => x.c.history.length === 0)
+    .sort((a, b) => a.tier - b.tier || a.idx - b.idx);
+  const freshPriority = fresh.filter((x) => x.tier === 0); // 優先語＝キャップなし
+  const freshBanks = fresh.filter((x) => x.tier > 0).slice(0, VOCAB_NEW_PER_DAY);
+
+  const ordered = [...reviews, ...freshPriority, ...freshBanks];
+  return ordered.slice(0, VOCAB_DAILY).map((x) => x.p.id);
+}
+
 // --- 回答の記録（SRS更新） -----------------------------------
 /** 自己採点の結果を記録し、箱と次回期限を更新する */
 function recordAnswer(id, ok) {
@@ -169,9 +211,17 @@ function recordAnswer(id, ok) {
 }
 
 // --- 統計 -----------------------------------------------------
-/** マスター数（箱4以上）を数える */
+/** マスター数（箱4以上）を数える（漢字のみ。ことばクイズの語彙IDは除外） */
 function masteredCount() {
-  return Object.values(store.progress).filter((c) => c.box >= 4).length;
+  return Object.entries(store.progress).filter(
+    ([id, c]) => !id.startsWith("v-") && c.box >= 4
+  ).length;
+}
+/** ことばクイズのマスター数（箱4以上・語彙IDのみ）を数える */
+function vocabMasteredCount() {
+  return Object.entries(store.progress).filter(
+    ([id, c]) => id.startsWith("v-") && c.box >= 4
+  ).length;
 }
 /** 苦手リスト（間違い回数の多い順）を返す */
 function weakList(limit = 5) {
@@ -186,7 +236,7 @@ function weakList(limit = 5) {
 // ============================================================
 // 画面制御
 // ============================================================
-const screens = ["home", "quiz", "result", "manage"];
+const screens = ["home", "quiz", "vocab", "result", "manage"];
 function showScreen(name) {
   screens.forEach((s) => {
     const el = document.getElementById("screen-" + s);
@@ -206,6 +256,7 @@ function renderHome() {
   document.getElementById("home-streak").textContent = store.meta.streak || 0;
   document.getElementById("home-mastered").textContent = masteredCount();
   document.getElementById("home-count").textContent = queue.length;
+  document.getElementById("home-vocab-mastered").textContent = vocabMasteredCount();
 
   const btnStart = document.getElementById("btn-start");
   const doneNote = document.getElementById("home-done-note");
@@ -225,6 +276,26 @@ function renderHome() {
     btnStart.disabled = false;
     btnStart.textContent = "▶ はじめる";
     doneNote.classList.add("hidden");
+  }
+
+  // ことばクイズの導線
+  const vocabQueue = buildVocabQueue();
+  const vSession = store.vocabSession;
+  const vocabFinishedToday =
+    vSession && vSession.date === today && vSession.index >= vSession.ids.length;
+  const btnVocabHome = document.getElementById("btn-vocab-home");
+  if (vocabQueue.length === 0) {
+    btnVocabHome.disabled = true;
+    btnVocabHome.textContent = "🗣 ことばは おやすみ";
+  } else if (vocabFinishedToday) {
+    btnVocabHome.disabled = false;
+    btnVocabHome.textContent = "🗣 ことばクイズ おわったよ！もう一度";
+  } else if (vSession && vSession.date === today) {
+    btnVocabHome.disabled = false;
+    btnVocabHome.textContent = "🗣 ことばクイズ つづきをする";
+  } else {
+    btnVocabHome.disabled = false;
+    btnVocabHome.textContent = "🗣 ことばクイズ";
   }
 
   // 苦手リスト
@@ -264,6 +335,7 @@ function updateBackupReminder(today) {
 
 // --- クイズ画面 ----------------------------------------------
 let quizState = null; // {ids, index, results:{}}
+let vocabState = null; // {ids, index, results:{}}（ことばクイズ用・quizStateとは別枠）
 
 /** セッションを開始（途中なら再開、完了済みなら作り直し） */
 function startSession() {
@@ -403,6 +475,143 @@ function finishSession() {
       wrong.map((p) => `<span class="weak-kanji">${escapeHtml(p.answer)}</span>`).join("") +
       "</div>";
   }
+
+  // ことばクイズが残っていれば「つづけて」導線を出す
+  const vocabQueue = buildVocabQueue();
+  const vSession = store.vocabSession;
+  const vocabDoneToday =
+    vSession && vSession.date === today && vSession.index >= vSession.ids.length;
+  const btnVocabStart = document.getElementById("btn-vocab-start");
+  btnVocabStart.classList.toggle("hidden", !(vocabQueue.length > 0 && !vocabDoneToday));
+
+  showScreen("result");
+}
+
+// ============================================================
+// ことばクイズ画面
+// ============================================================
+
+/** 配列をシャッフルした新しい配列を返す（Fisher-Yates） */
+function shuffleArray(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/** セッションを開始（途中なら再開、完了済みなら作り直し） */
+function startVocabSession() {
+  const today = todayStr();
+  const s = store.vocabSession;
+  if (s && s.date === today && s.index < s.ids.length) {
+    vocabState = { ids: s.ids, index: s.index, results: s.results || {} };
+  } else {
+    const ids = buildVocabQueue();
+    if (ids.length === 0) {
+      renderHome();
+      return;
+    }
+    vocabState = { ids, index: 0, results: {} };
+    store.vocabSession = { date: today, ids, index: 0, results: {} };
+    saveStore();
+  }
+  showVocabQuestion();
+}
+
+/** 現在の語彙問題を表示（3択をシャッフルして描画） */
+function showVocabQuestion() {
+  const id = vocabState.ids[vocabState.index];
+  const p = vocabProblemById(id);
+  if (!p) {
+    nextVocabQuestion();
+    return;
+  }
+  document.getElementById("vocab-progress").textContent =
+    `${vocabState.index + 1} / ${vocabState.ids.length}`;
+  document.getElementById("vocab-reading").textContent = p.reading || "";
+  document.getElementById("vocab-word").textContent = p.word;
+  document.getElementById("vocab-feedback").classList.add("hidden");
+
+  const choices = shuffleArray([p.answer, ...p.distractors]);
+  const box = document.getElementById("vocab-choices");
+  box.innerHTML = "";
+  choices.forEach((choice) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "choice-btn";
+    btn.textContent = choice;
+    btn.addEventListener("click", () => selectVocabChoice(choice, p, btn));
+    box.appendChild(btn);
+  });
+  showScreen("vocab");
+}
+
+/** 選択肢タップ時の採点処理（自動採点・SRSへ記録） */
+function selectVocabChoice(choice, p, btnEl) {
+  const ok = choice === p.answer;
+  document.querySelectorAll("#vocab-choices .choice-btn").forEach((b) => {
+    b.disabled = true;
+    if (b.textContent === p.answer) b.classList.add("ok");
+    else if (b === btnEl && !ok) b.classList.add("ng");
+  });
+
+  recordAnswer(p.id, ok);
+  vocabState.results[p.id] = ok ? "o" : "x";
+  vocabState.index += 1;
+  store.vocabSession = {
+    date: todayStr(),
+    ids: vocabState.ids,
+    index: vocabState.index,
+    results: vocabState.results,
+  };
+  saveStore();
+
+  document.getElementById("vocab-feedback-msg").textContent = ok
+    ? "せいかい！🎉"
+    : "おしい！正しい いみは…";
+  document.getElementById("vocab-example").textContent = `れいぶん：${p.example}`;
+  document.getElementById("vocab-feedback").classList.remove("hidden");
+}
+
+function nextVocabQuestion() {
+  if (vocabState.index >= vocabState.ids.length) {
+    finishVocabSession();
+  } else {
+    showVocabQuestion();
+  }
+}
+
+/** ことばクイズの結果画面（漢字と同じ screen-result を再利用。streakは更新しない） */
+function finishVocabSession() {
+  const ids = vocabState.ids;
+  const okCount = ids.filter((id) => vocabState.results[id] === "o").length;
+  const total = ids.length;
+  document.getElementById("result-score").textContent = `${okCount} / ${total}`;
+
+  const ratio = total ? okCount / total : 0;
+  let msg = "よくがんばったね！";
+  if (ratio === 1) msg = "ことば全部せいかい！すごい！🎉";
+  else if (ratio >= 0.7) msg = "いいちょうし！この調子！👍";
+  else msg = "まちがえたことばは明日また出るよ。だいじょうぶ！";
+  document.getElementById("result-msg").textContent = msg;
+  document.getElementById("result-streak").textContent = "";
+
+  const wrong = ids
+    .filter((id) => vocabState.results[id] === "x")
+    .map((id) => vocabProblemById(id))
+    .filter(Boolean);
+  const wrongBox = document.getElementById("result-weak");
+  if (wrong.length === 0) {
+    wrongBox.innerHTML = '<p class="muted">今日はぜんぶ○！</p>';
+  } else {
+    wrongBox.innerHTML =
+      "<p>今日まちがえたことば（明日また出ます）：</p><div class='kanji-row'>" +
+      wrong.map((p) => `<span class="weak-kanji">${escapeHtml(p.word)}</span>`).join("") +
+      "</div>";
+  }
+  document.getElementById("btn-vocab-start").classList.add("hidden");
   showScreen("result");
 }
 
@@ -628,6 +837,7 @@ function bindEvents() {
   // ホーム
   document.getElementById("btn-start").addEventListener("click", startSession);
   document.getElementById("btn-manage").addEventListener("click", openManage);
+  document.getElementById("btn-vocab-home").addEventListener("click", startVocabSession);
   // バックアップ促しをタップ → そのまま管理画面（書き出し）へ
   document
     .getElementById("home-backup-reminder")
@@ -646,6 +856,11 @@ function bindEvents() {
 
   // 結果
   document.getElementById("btn-home").addEventListener("click", renderHome);
+  document.getElementById("btn-vocab-start").addEventListener("click", startVocabSession);
+
+  // ことばクイズ
+  document.getElementById("btn-vocab-quit").addEventListener("click", renderHome);
+  document.getElementById("btn-vocab-next").addEventListener("click", nextVocabQuestion);
 
   // 管理: 取り込み
   document.getElementById("btn-import").addEventListener("click", () => {
