@@ -1,6 +1,6 @@
 // service worker: オフラインで使えるよう、アプリ一式をキャッシュする
 // 中身を更新したら CACHE バージョン名を上げること（古いキャッシュを破棄）
-const CACHE = "kanji-drill-v9";
+const CACHE = "kanji-drill-v10";
 // 必須アセット（必ずキャッシュ）。priority_data.js は個人データのため公開版には無いことがある→任意扱い
 const ASSETS = [
   "./",
@@ -39,8 +39,10 @@ self.addEventListener("activate", (event) => {
 });
 
 // 取得はキャッシュ優先（オフライン動作）。無ければネットワーク。
+// 他オリジン（Google Fonts等）はSWを介さず素通しする（iOS Safariで横取りすると不安定になるため）
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
