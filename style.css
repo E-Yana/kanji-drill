@@ -142,6 +142,15 @@ html, body {
   margin-bottom: 8px;
 }
 
+.update-banner {
+  text-decoration: none;
+  font-size: 14px;
+  color: #7a4a00;
+  background: #fdecc8;
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+}
+
 .mini-btn {
   padding: 6px 12px;
   font-size: 14px;
