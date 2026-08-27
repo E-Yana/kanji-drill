@@ -18,6 +18,9 @@ const VOCAB_NEW_PER_DAY = 3; // 1日に増やす新出語数
 const INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 15 };
 const MAX_BOX = 5;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
+// アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
+// （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
+const APP_VERSION = "v11";
 
 // --- 日付ユーティリティ --------------------------------------
 /** 今日の日付を YYYY-MM-DD（ローカル時刻）で返す */
@@ -319,6 +322,7 @@ function renderHome() {
   // バックアップ促し（保護者向け）: 進捗があり、最後の書き出しから一定日数たったら表示
   updateBackupReminder(today);
 
+  document.getElementById("app-version").textContent = APP_VERSION;
   showScreen("home");
 }
 
