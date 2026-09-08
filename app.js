@@ -21,7 +21,7 @@ const MAX_BOX = 5;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v13";
+const APP_VERSION = "v14";
 
 // --- 日付ユーティリティ --------------------------------------
 /** 今日の日付を YYYY-MM-DD（ローカル時刻）で返す */
@@ -797,8 +797,23 @@ function addOneProblem(prompt, answer, reading, word) {
   return { ok: true, msg: `「${norm.word}」を追加しました。` };
 }
 
+/** いまの問題数（分母）の内訳を描画（保護者向け・ホームには割合を出さない方針のため管理画面に置く） */
+function renderManageSummary() {
+  const el = document.getElementById("manage-summary");
+  if (!el) return;
+  const grade3 = (window.GRADE3_PROBLEMS || []).length;
+  const seed = (window.SEED_PROBLEMS || []).length;
+  const imported = store.imported.length;
+  el.innerHTML =
+    `<p>漢字 <strong>${masteredCount()} / ${allProblems().length}</strong> 字` +
+    `<span class="muted small">（3年復習 ${grade3}・4年 ${seed}・とりこみ ${imported}）</span></p>` +
+    `<p>ことば <strong>${vocabMasteredCount()} / ${allVocabProblems().length}</strong> 語</p>` +
+    `<p class="muted small">とりこむほど分母も増えるため、ホーム画面には割合を出さず「おぼえた数」だけを表示しています。</p>`;
+}
+
 /** 取り込み問題の一覧を描画（個別削除つき） */
 function renderManageList() {
+  renderManageSummary(); // 取り込み・削除のたびに呼ばれるので、問題数の内訳もここで一緒に更新する
   const box = document.getElementById("manage-list");
   if (store.imported.length === 0) {
     box.innerHTML = '<p class="muted">取り込んだ問題はまだありません。</p>';
