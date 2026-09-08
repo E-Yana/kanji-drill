@@ -12,6 +12,7 @@ const STORE_KEY = "kanjiDrill_v1"; // localStorage のキー
 const DEFAULT_DAILY = 10; // 1日の出題数
 const DEFAULT_NEW_PER_DAY = 3; // 1日に増やす新出漢字の数（復習/4年バンク）
 const BACKUP_REMIND_DAYS = 14; // 最終バックアップからこの日数が経ったら書き出しを促す
+const AWAY_REMIND_DAYS = 5; // 最終学習からこの日数以上空いたら「〇日ぶりだね」を表示（旅行等の数日の間は責めない）
 const VOCAB_DAILY = 5; // ことばクイズの1日の出題数
 const VOCAB_NEW_PER_DAY = 3; // 1日に増やす新出語数
 // Leitner の箱ごとの「次に出すまでの日数」（箱が上がるほど間隔が伸びる）
@@ -20,7 +21,7 @@ const MAX_BOX = 5;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v12";
+const APP_VERSION = "v13";
 
 // --- 日付ユーティリティ --------------------------------------
 /** 今日の日付を YYYY-MM-DD（ローカル時刻）で返す */
@@ -39,6 +40,12 @@ function addDays(dateStr, days) {
   const d = new Date(dateStr + "T00:00:00");
   d.setDate(d.getDate() + days);
   return toDateStr(d);
+}
+/** 2つの日付文字列(YYYY-MM-DD)の間の日数を返す */
+function daysBetween(fromStr, toStr) {
+  const a = new Date(fromStr + "T00:00:00");
+  const b = new Date(toStr + "T00:00:00");
+  return Math.round((b - a) / 86400000);
 }
 
 // --- ストア（永続化） ----------------------------------------
@@ -321,9 +328,29 @@ function renderHome() {
 
   // バックアップ促し（保護者向け）: 進捗があり、最後の書き出しから一定日数たったら表示
   updateBackupReminder(today);
+  // 「〇日ぶりだね」: 責めずに前向きに迎える一言（本人向け）
+  updateAwayNote(today);
 
   document.getElementById("app-version").textContent = APP_VERSION;
   showScreen("home");
+}
+
+/** ホームの「〇日ぶりだね」表示を更新する（本人向け・責めない前向きな一言） */
+function updateAwayNote(today) {
+  const el = document.getElementById("home-away-note");
+  if (!el) return;
+  const last = store.meta.lastStudyDate;
+  if (!last || last === today) {
+    el.classList.add("hidden");
+    return;
+  }
+  const gapDays = daysBetween(last, today);
+  if (gapDays >= AWAY_REMIND_DAYS) {
+    el.textContent = `${gapDays}日ぶりだね！またいっしょに がんばろう`;
+    el.classList.remove("hidden");
+  } else {
+    el.classList.add("hidden");
+  }
 }
 
 /** ホームの「きろくを書き出してね」促しの表示/非表示を更新する */
@@ -346,8 +373,13 @@ function startSession() {
   const today = todayStr();
   const s = store.session;
   if (s && s.date === today && s.index < s.ids.length) {
-    // 途中再開
-    quizState = { ids: s.ids, index: s.index, results: s.results || {} };
+    // 途中再開（マスター数の基準はセッション開始時点のものを引き継ぐ）
+    quizState = {
+      ids: s.ids,
+      index: s.index,
+      results: s.results || {},
+      masteredBefore: s.masteredBefore ?? masteredCount(),
+    };
   } else {
     // 新規（または当日完了後のふくしゅう）
     const ids = buildQueue();
@@ -355,8 +387,9 @@ function startSession() {
       renderHome();
       return;
     }
-    quizState = { ids, index: 0, results: {} };
-    store.session = { date: today, ids, index: 0, results: {} };
+    const masteredBefore = masteredCount();
+    quizState = { ids, index: 0, results: {}, masteredBefore };
+    store.session = { date: today, ids, index: 0, results: {}, masteredBefore };
     saveStore();
   }
   showQuestion();
@@ -423,6 +456,7 @@ function gradeCurrent(ok) {
     ids: quizState.ids,
     index: quizState.index,
     results: quizState.results,
+    masteredBefore: quizState.masteredBefore,
   };
   saveStore();
   nextQuestion();
@@ -437,6 +471,18 @@ function nextQuestion() {
 }
 
 // --- 結果画面 ------------------------------------------------
+/** 達成メッセージ（新しくマスターした数）を結果画面に表示する。0以下なら非表示にする */
+function renderAchievement(newlyMastered, unit) {
+  const el = document.getElementById("result-achievement");
+  if (!el) return;
+  if (newlyMastered > 0) {
+    el.textContent = `🌟 新しく ${newlyMastered}${unit} マスターしたよ！`;
+    el.classList.remove("hidden");
+  } else {
+    el.classList.add("hidden");
+  }
+}
+
 function finishSession() {
   // 連続日数（streak）を1日1回だけ更新
   const today = todayStr();
@@ -464,6 +510,9 @@ function finishSession() {
   document.getElementById("result-msg").textContent = msg;
   document.getElementById("result-streak").textContent =
     `🔥 連続 ${store.meta.streak} 日`;
+
+  // 達成メッセージ（新しくマスターした字の数だけを前向きに伝える。正答率は見せない）
+  renderAchievement(masteredCount() - (quizState.masteredBefore ?? masteredCount()), "字");
 
   // 今日できなかった字
   const wrong = ids
@@ -510,15 +559,21 @@ function startVocabSession() {
   const today = todayStr();
   const s = store.vocabSession;
   if (s && s.date === today && s.index < s.ids.length) {
-    vocabState = { ids: s.ids, index: s.index, results: s.results || {} };
+    vocabState = {
+      ids: s.ids,
+      index: s.index,
+      results: s.results || {},
+      masteredBefore: s.masteredBefore ?? vocabMasteredCount(),
+    };
   } else {
     const ids = buildVocabQueue();
     if (ids.length === 0) {
       renderHome();
       return;
     }
-    vocabState = { ids, index: 0, results: {} };
-    store.vocabSession = { date: today, ids, index: 0, results: {} };
+    const masteredBefore = vocabMasteredCount();
+    vocabState = { ids, index: 0, results: {}, masteredBefore };
+    store.vocabSession = { date: today, ids, index: 0, results: {}, masteredBefore };
     saveStore();
   }
   showVocabQuestion();
@@ -569,6 +624,7 @@ function selectVocabChoice(choice, p, btnEl) {
     ids: vocabState.ids,
     index: vocabState.index,
     results: vocabState.results,
+    masteredBefore: vocabState.masteredBefore,
   };
   saveStore();
 
@@ -601,6 +657,9 @@ function finishVocabSession() {
   else msg = "まちがえたことばは明日また出るよ。だいじょうぶ！";
   document.getElementById("result-msg").textContent = msg;
   document.getElementById("result-streak").textContent = "";
+
+  // 達成メッセージ（新しくマスターしたことばの数だけを前向きに伝える）
+  renderAchievement(vocabMasteredCount() - (vocabState.masteredBefore ?? vocabMasteredCount()), "ご");
 
   const wrong = ids
     .filter((id) => vocabState.results[id] === "x")
