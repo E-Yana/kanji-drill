@@ -21,7 +21,8 @@ const MAX_BOX = 5;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v14";
+const APP_VERSION = "v15";
+const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 
 // --- 日付ユーティリティ --------------------------------------
 /** 今日の日付を YYYY-MM-DD（ローカル時刻）で返す */
@@ -788,6 +789,41 @@ function seedPriorityOnce() {
   saveStore();
 }
 
+/** 公開サイトの追加問題（inbox.json）を取り込む。同じidは一度だけ・最優先（要復習）で入れる */
+async function importInboxOnce() {
+  let data;
+  try {
+    const res = await fetch(INBOX_URL, { cache: "no-store" });
+    if (!res.ok) return;
+    data = await res.json();
+  } catch (e) {
+    return; // オフライン等は黙って次回に回す
+  }
+  const list = Array.isArray(data && data.problems) ? data.problems : [];
+  const seen = new Set(store.meta.inboxSeen || []);
+  let added = 0;
+  let changed = false;
+  for (const obj of list) {
+    const id = obj && obj.id ? String(obj.id) : "";
+    if (!id || seen.has(id)) continue;
+    const norm = normalizeProblem(obj);
+    if (!norm) continue; // 形式不正は記録せず、直されたら次回また試す
+    const dup = store.imported.some((p) => p.prompt === norm.prompt && p.answer === norm.answer);
+    if (!dup) {
+      store.imported.push(norm);
+      added += 1;
+    }
+    seen.add(id);
+    changed = true;
+  }
+  if (!changed) return;
+  store.meta.inboxSeen = Array.from(seen);
+  saveStore();
+  // 出題中の画面を消さないよう、ホーム表示中だけ描き直す
+  const home = document.getElementById("screen-home");
+  if (added > 0 && home && !home.classList.contains("hidden")) renderHome();
+}
+
 /** 1問だけ手入力で追加 */
 function addOneProblem(prompt, answer, reading, word) {
   const norm = normalizeProblem({ prompt, answer, reading, word });
@@ -864,6 +900,8 @@ function restoreData(text) {
   try {
     const parsed = JSON.parse(text);
     if (!parsed || typeof parsed !== "object") throw new Error("不正なデータ");
+    // 追加問題（inbox.json）の取り込み済みidは、古いバックアップで消えないよう今の分と合算する
+    const seenNow = (store.meta && store.meta.inboxSeen) || [];
     store = {
       imported: parsed.imported || [],
       progress: parsed.progress || {},
@@ -872,6 +910,7 @@ function restoreData(text) {
     };
     // 復元＝手元に新しい控えがある状態とみなし、促しをリセット
     store.meta.lastBackup = todayStr();
+    store.meta.inboxSeen = Array.from(new Set([...(store.meta.inboxSeen || []), ...seenNow]));
     saveStore();
     return { ok: true, msg: "進捗を復元しました。" };
   } catch (e) {
@@ -984,6 +1023,7 @@ function bindEvents() {
 
 function main() {
   seedPriorityOnce(); // 同梱の優先問題を初回だけ投入
+  importInboxOnce(); // 公開サイトの追加問題を取り込む（失敗しても無視）
   bindEvents();
   renderHome();
 

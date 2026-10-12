@@ -1,7 +1,7 @@
 // service worker: オフラインで使えるよう、アプリ一式をキャッシュする
 // 中身を更新したら CACHE バージョン名を上げること（古いキャッシュを破棄）
-const CACHE = "kanji-drill-v14";
-// 必須アセット（必ずキャッシュ）。priority_data.js は個人データのため公開版には無いことがある→任意扱い
+const CACHE = "kanji-drill-v15";
+// 必須アセット（必ずキャッシュ）。priority_data.js（旧・非公開の控え）は公開版には無いことがある→任意扱い。追加問題は inbox.json（ネット優先）
 const ASSETS = [
   "./",
   "./index.html",
@@ -43,6 +43,11 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   if (new URL(event.request.url).origin !== self.location.origin) return;
+  // 追加問題ファイルは古いまま固まらないよう、ネット優先（オフライン時だけキャッシュ）
+  if (new URL(event.request.url).pathname.endsWith("/inbox.json")) {
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
