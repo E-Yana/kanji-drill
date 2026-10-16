@@ -60,7 +60,9 @@
       <div id="home-weak"></div>
     </div>
 
-    <button id="home-backup-reminder" class="text-btn backup-reminder hidden">💾 そろそろ きろくを 書き出して おくと安心です（タップ）</button>
+    <button id="home-backup-reminder" class="text-btn backup-reminder hidden">💾 そろそろ きろくを ほぞんして おくと安心です（タップ）</button>
+    <button id="btn-backup-home" class="text-btn">💾 きろくを ほぞん</button>
+    <p id="home-backup-status" class="form-msg"></p>
 
     <button id="btn-manage" class="text-btn">⚙ 問題のとりこみ・せってい</button>
     <p id="app-version" class="muted small version-label"></p>
@@ -190,8 +192,9 @@
 
     <div class="panel">
       <h2>③ バックアップ</h2>
-      <p class="muted small">きろくは このiPadだけに ほぞんされます。きしゅへんこうの前などに 書き出しておくと安心です。</p>
-      <button id="btn-export" class="mid-btn">きろくを 書き出す</button>
+      <p class="muted small">きろくは このiPadだけに ほぞんされます。きしゅへんこうの前などに ほぞんしておくと安心です。「ファイルに ほぞん」→「ドライブ」を えらんでね。</p>
+      <button id="btn-export" class="mid-btn">きろくを ほぞん</button>
+      <p id="backup-status" class="form-msg"></p>
       <label class="restore-label">きろくを よみこむ（ふくげん）
         <input id="restore-file" type="file" accept="application/json,.json" />
       </label>
@@ -207,6 +210,7 @@
 <script src="grade3_data.js"></script>
 <script src="priority_data.js"></script>
 <script src="vocab_data.js"></script>
+<script src="backup.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

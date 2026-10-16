@@ -21,8 +21,20 @@ const MAX_BOX = 5;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v15";
+const APP_VERSION = "v16";
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
+const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
+const LAST_BACKUP_KEY = "kanjiDrill_lastBackup"; // 共有/ダウンロードを実行した日（Drive保存の保証ではない）
+const RESTORE_KEY_PREFIX = "kanjiDrill_v1_restore_"; // 復元前の退避キー（+日付）
+const WEAK_TOP_N = 10; // バックアップ要約に載せる苦手の件数
+const MSG_BACKUP_SHARED = "ほぞんの がめんを ひらきました。「ファイルに ほぞん」→「ドライブ」";
+const MSG_BACKUP_DOWNLOADED = "ファイルを ダウンロードしました";
+const MSG_BACKUP_FAILED = "ほぞんできませんでした";
+const MSG_RESTORE_BAD_FILE = "このファイルは つかえません。いまの きろくは そのままです";
+const MSG_RESTORE_CONFIRM = "いまの きろくを ファイルの きろくに おきかえます。いいですか？";
+const MSG_RESTORE_ARCHIVE_FAILED = "いまの きろくを のこせなかったので、やめました。いまの きろくは そのままです";
+const MSG_RESTORE_DONE = "もとに もどしました";
+const MSG_RESTORE_READ_FAILED = "ファイルを よめませんでした";
 
 // --- 日付ユーティリティ --------------------------------------
 /** 今日の日付を YYYY-MM-DD（ローカル時刻）で返す */
@@ -354,13 +366,33 @@ function updateAwayNote(today) {
   }
 }
 
+/** 最終保存日を返す。別キーを優先し、無ければ旧 store.meta.lastBackup を見る（既存端末で促しが突然出ないように） */
+function getLastBackup() {
+  try {
+    const v = localStorage.getItem(LAST_BACKUP_KEY);
+    if (v) return v;
+  } catch (e) {
+    /* 読めなければ旧値へ */
+  }
+  return store.meta.lastBackup || null;
+}
+
+/** 保存を実行した日を別キーへ書く（旧 store.meta.lastBackup には書かない） */
+function setLastBackup() {
+  try {
+    localStorage.setItem(LAST_BACKUP_KEY, todayStr());
+  } catch (e) {
+    console.warn("lastBackup の保存に失敗", e);
+  }
+}
+
 /** ホームの「きろくを書き出してね」促しの表示/非表示を更新する */
 function updateBackupReminder(today) {
   const el = document.getElementById("home-backup-reminder");
   if (!el) return;
   const hasProgress = masteredCount() > 0 || weakList(1).length > 0;
-  const last = store.meta.lastBackup;
-  // 未書き出し(null)、または最終書き出し+N日が今日以前なら促す
+  const last = getLastBackup();
+  // 未保存(null)、または最終保存+N日が今日以前なら促す
   const due = !last || addDays(last, BACKUP_REMIND_DAYS) <= today;
   el.classList.toggle("hidden", !(hasProgress && due));
 }
@@ -880,42 +912,148 @@ function renderManageList() {
   });
 }
 
-// --- バックアップ（エクスポート / 復元） ---------------------
-function exportData() {
-  const blob = new Blob([JSON.stringify(store, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `kanji_drill_backup_${todayStr()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  // 書き出した日を記録（ホームの「書き出してね」促しを止めるため）
-  store.meta.lastBackup = todayStr();
-  saveStore();
+// --- バックアップ兼きろく（保存 / 復元） ---------------------
+/** ことばの苦手リスト（間違い回数の多い順・箱4未満）。漢字の weakList と対になる語彙版 */
+function vocabWeakList(limit = WEAK_TOP_N) {
+  return Object.entries(store.progress)
+    .filter(([id, c]) => id.startsWith("v-") && c.wrongCount > 0 && c.box < 4)
+    .sort((a, b) => b[1].wrongCount - a[1].wrongCount)
+    .slice(0, limit)
+    .map(([id, c]) => ({ p: vocabProblemById(id), c }))
+    .filter((x) => x.p);
 }
 
-function restoreData(text) {
+/** Claude が読む要約（できた数・苦手上位・連続日数・最終学習日） */
+function buildBackupSummary() {
+  return {
+    masteredCount: masteredCount(),
+    totalCount: allProblems().length,
+    vocabMasteredCount: vocabMasteredCount(),
+    vocabTotalCount: allVocabProblems().length,
+    weakKanji: weakList(WEAK_TOP_N).map((x) => ({
+      id: x.p.id,
+      prompt: x.p.prompt,
+      answer: x.p.answer,
+      word: x.p.word,
+      wrongCount: x.c.wrongCount,
+      box: x.c.box,
+    })),
+    weakVocab: vocabWeakList(WEAK_TOP_N).map((x) => ({
+      id: x.p.id,
+      word: x.p.word,
+      wrongCount: x.c.wrongCount,
+      box: x.c.box,
+    })),
+    streak: store.meta.streak || 0,
+    lastStudyDate: store.meta.lastStudyDate || null,
+  };
+}
+
+function setBackupStatus(id, text, ok = true) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = "form-msg " + (ok ? "ok" : "ng");
+}
+
+function downloadFile(file) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** 保存の結果を、ホームと管理画面の両方の表示欄に出す */
+function showBackupStatus(text, ok = true) {
+  setBackupStatus("home-backup-status", text, ok);
+  setBackupStatus("backup-status", text, ok);
+}
+
+/** きろくを保存する（共有シート → 不可・失敗ならダウンロード） */
+async function saveBackup() {
+  const today = todayStr();
+  const backup = DrillBackup.buildBackup({
+    appId: BACKUP_APP_ID,
+    appVersion: APP_VERSION,
+    today,
+    summary: buildBackupSummary(),
+    state: store,
+  });
+  const file = new File([JSON.stringify(backup, null, 2)], DrillBackup.backupFileName(BACKUP_APP_ID, today), {
+    type: "application/json",
+  });
+  const done = (msg) => {
+    showBackupStatus(msg);
+    setLastBackup();
+    updateBackupReminder(todayStr());
+  };
   try {
-    const parsed = JSON.parse(text);
-    if (!parsed || typeof parsed !== "object") throw new Error("不正なデータ");
-    // 追加問題（inbox.json）の取り込み済みidは、古いバックアップで消えないよう今の分と合算する
-    const seenNow = (store.meta && store.meta.inboxSeen) || [];
-    store = {
-      imported: parsed.imported || [],
-      progress: parsed.progress || {},
-      meta: parsed.meta || { streak: 0, lastStudyDate: null, lastBackup: null, settings: { dailyCount: DEFAULT_DAILY } },
-      session: parsed.session || null,
-    };
-    // 復元＝手元に新しい控えがある状態とみなし、促しをリセット
-    store.meta.lastBackup = todayStr();
-    store.meta.inboxSeen = Array.from(new Set([...(store.meta.inboxSeen || []), ...seenNow]));
-    saveStore();
-    return { ok: true, msg: "進捗を復元しました。" };
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+      done(MSG_BACKUP_SHARED);
+    } else {
+      downloadFile(file);
+      done(MSG_BACKUP_DOWNLOADED);
+    }
   } catch (e) {
-    return { ok: false, msg: "復元に失敗しました。バックアップJSONを確認してください。" };
+    if (e && e.name === "AbortError") return; // とちゅうで やめた
+    try {
+      downloadFile(file);
+      done(MSG_BACKUP_DOWNLOADED);
+    } catch (e2) {
+      showBackupStatus(MSG_BACKUP_FAILED, false);
+    }
   }
+}
+
+/** バックアップ側の store から、loadStore と同じ補い方で新しい store を組み立てる（inboxSeen は合算しない） */
+function storeFromBackup(src) {
+  const init = {
+    meta: {
+      streak: 0,
+      lastStudyDate: null,
+      lastBackup: null,
+      settings: { dailyCount: DEFAULT_DAILY, newPerDay: DEFAULT_NEW_PER_DAY },
+    },
+  };
+  return {
+    imported: src.imported || [],
+    progress: src.progress || {},
+    meta: Object.assign(init.meta, src.meta || {}),
+    session: src.session || null,
+    vocabSession: src.vocabSession || null,
+  };
+}
+
+/** 検証済みの store を適用する（退避に成功してから呼ぶ） */
+function applyRestoredStore(src) {
+  store = storeFromBackup(src);
+  saveStore();
+  setLastBackup();
+  quizState = null;
+  vocabState = null;
+  importInboxOnce(); // バックアップ後に inbox へ足された問題を、重複なしで取り込み直す
+  renderHome();
+}
+
+/** バックアップファイルのテキストから復元する（検証 → 確認 → 退避 → 適用） */
+function restoreFromText(text) {
+  const res = DrillBackup.parseBackup(text, BACKUP_APP_ID);
+  if (!res.ok) {
+    setBackupStatus("restore-msg", MSG_RESTORE_BAD_FILE, false);
+    return;
+  }
+  if (!confirm(MSG_RESTORE_CONFIRM)) return;
+  // 現記録があるのに退避できなかった時だけ中止する（記録が空の端末では退避を飛ばして復元できる）
+  const arch = DrillBackup.archiveCurrentRecord(localStorage, STORE_KEY, RESTORE_KEY_PREFIX, todayStr());
+  if (!arch.ok) {
+    setBackupStatus("restore-msg", MSG_RESTORE_ARCHIVE_FAILED, false);
+    return;
+  }
+  applyRestoredStore(res.state);
+  showBackupStatus(MSG_RESTORE_DONE); // 復元後はホームへ戻るので、ホームの表示欄にも出す
 }
 
 // ============================================================
@@ -955,10 +1093,9 @@ function bindEvents() {
   document.getElementById("btn-start").addEventListener("click", startSession);
   document.getElementById("btn-manage").addEventListener("click", openManage);
   document.getElementById("btn-vocab-home").addEventListener("click", startVocabSession);
-  // バックアップ促しをタップ → そのまま管理画面（書き出し）へ
-  document
-    .getElementById("home-backup-reminder")
-    .addEventListener("click", openManage);
+  // 「きろくを ほぞん」と促しバナーのタップは、どちらも保存を直接実行する
+  document.getElementById("btn-backup-home").addEventListener("click", saveBackup);
+  document.getElementById("home-backup-reminder").addEventListener("click", saveBackup);
   // 新出ペースの変更
   document.getElementById("setting-newperday").addEventListener("change", (e) => {
     store.meta.settings.newPerDay = parseInt(e.target.value, 10) || DEFAULT_NEW_PER_DAY;
@@ -1006,17 +1143,15 @@ function bindEvents() {
     }
   });
   // 管理: バックアップ
-  document.getElementById("btn-export").addEventListener("click", exportData);
+  document.getElementById("btn-export").addEventListener("click", saveBackup);
   document.getElementById("restore-file").addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      const res = restoreData(reader.result);
-      flashMsg("restore-msg", res);
-      if (res.ok) renderManageList();
-    };
+    reader.onload = () => restoreFromText(String(reader.result));
+    reader.onerror = () => setBackupStatus("restore-msg", MSG_RESTORE_READ_FAILED, false);
     reader.readAsText(file);
+    e.target.value = ""; // 同じファイルをもう一度選べるように
   });
   document.getElementById("btn-back").addEventListener("click", renderHome);
 }
