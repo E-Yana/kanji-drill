@@ -14,14 +14,18 @@ const DEFAULT_NEW_PER_DAY = 3; // 1日に増やす新出漢字の数（復習/4�
 const BACKUP_REMIND_DAYS = 14; // 最終バックアップからこの日数が経ったら書き出しを促す
 const AWAY_REMIND_DAYS = 5; // 最終学習からこの日数以上空いたら「〇日ぶりだね」を表示（旅行等の数日の間は責めない）
 const VOCAB_DAILY = 5; // ことばクイズの1日の出題数
-const VOCAB_NEW_PER_DAY = 3; // 1日に増やす新出語数
+const NEW_MIN = 2; // 漢字：1日に最低これだけ新出を入れる（在庫がある時）
+const MASTERED_CAP = 3; // 漢字：定着済み（箱4以上）の復習の1日の目安上限
+const VOCAB_NEW_MIN = 1; // ことば：新出の最低数
+const VOCAB_NEW_TARGET = 2; // ことば：新出の目標数
+const VOCAB_MASTERED_CAP = 2; // ことば：定着済みの1日の上限（新出が残っている時）
 // Leitner の箱ごとの「次に出すまでの日数」（箱が上がるほど間隔が伸びる）
-const INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 15 };
+const INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 30 };
 const MAX_BOX = 5;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v16";
+const APP_VERSION = "v17";
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
 const LAST_BACKUP_KEY = "kanjiDrill_lastBackup"; // 共有/ダウンロードを実行した日（Drive保存の保証ではない）
@@ -148,66 +152,50 @@ function getCard(id) {
 }
 
 // --- 出題キューの組み立て（mistake-weighted SRS） ------------
-/**
- * 今日出す問題IDの配列を作る（段階化＋新出キャップ）。
- *   1. 復習（既出で期限到来）を優先（要復習→箱小→間違い多い順）
- *   2. 新規の tier0（優先問題）をキャップなしで詰める
- *   3. 新規の tier1→tier2 を、合計 newPerDay 問まで詰める（3年→4年の順、4年は当面出ない）
- *   4. 全体を dailyCount で切る
- */
-function buildQueue() {
-  const today = todayStr();
-  const dailyCount = store.meta.settings.dailyCount || DEFAULT_DAILY;
-  const newPerDay = store.meta.settings.newPerDay ?? DEFAULT_NEW_PER_DAY;
-
-  const pool = allProblems().map((p, idx) => ({ p, c: getCard(p.id), tier: tierOf(p), idx }));
-
-  // 1. 復習（履歴あり & 期限到来）
-  const reviews = pool
-    .filter((x) => x.c.history.length > 0 && x.c.dueDate <= today)
-    .sort((a, b) => {
-      if (a.tier !== b.tier) return a.tier - b.tier; // 優先層を先に
-      if (a.c.box !== b.c.box) return a.c.box - b.c.box; // 苦手(箱小)を先に
-      return b.c.wrongCount - a.c.wrongCount; // 間違い回数が多い順
-    });
-
-  // 2-3. 新規（未学習）。tier昇順→配列順で安定的に並べる
-  const fresh = pool
-    .filter((x) => x.c.history.length === 0)
-    .sort((a, b) => a.tier - b.tier || a.idx - b.idx);
-  const freshPriority = fresh.filter((x) => x.tier === 0); // 優先問題＝キャップなし
-  const freshBanks = fresh.filter((x) => x.tier > 0).slice(0, newPerDay); // 復習/4年＝1日 newPerDay 問まで
-
-  const ordered = [...reviews, ...freshPriority, ...freshBanks];
-  return ordered.slice(0, dailyCount).map((x) => x.p.id);
+/** 問題と習熟度カードから composeDaily 用の項目を作る（出題済み＝history あり） */
+function toQueueItem(p, idx, tier) {
+  const c = getCard(p.id);
+  return {
+    id: p.id,
+    box: c.box,
+    dueDate: c.dueDate,
+    wrongCount: c.wrongCount,
+    tier,
+    idx,
+    seen: c.history.length > 0,
+  };
 }
 
-/** ことばクイズの今日出す問題IDの配列を作る（buildQueue() と同じ3段構成の語彙版） */
+/**
+ * 今日出す問題IDの配列を作る（配分は queue.js の composeDaily）。
+ *   苦手＝期限が来た箱1〜3／定着＝期限が来た箱4以上／新出＝未出題（優先 tier0 が先頭）
+ *   1. 新出の最低数と定着1問を確保 2. 苦手で埋める 3. 新出を目標数まで
+ *   4. 定着を上限まで 5. 余りは新出、それでも余れば定着で埋める
+ *   表示順は 苦手→定着→新出
+ */
+function buildQueue() {
+  const daily = store.meta.settings.dailyCount || DEFAULT_DAILY;
+  const newTarget = store.meta.settings.newPerDay ?? DEFAULT_NEW_PER_DAY;
+  const items = allProblems().map((p, idx) => toQueueItem(p, idx, tierOf(p)));
+  return window.DrillQueue.composeDaily(items, {
+    today: todayStr(),
+    daily,
+    newMin: NEW_MIN,
+    newTarget,
+    masteredCap: MASTERED_CAP,
+  });
+}
+
+/** ことばクイズの今日出す問題IDの配列を作る（buildQueue() の語彙版。優先語は tier0） */
 function buildVocabQueue() {
-  const today = todayStr();
-  const pool = allVocabProblems().map((p, idx) => ({
-    p,
-    c: getCard(p.id),
-    tier: p.priority ? 0 : 1,
-    idx,
-  }));
-
-  const reviews = pool
-    .filter((x) => x.c.history.length > 0 && x.c.dueDate <= today)
-    .sort((a, b) => {
-      if (a.tier !== b.tier) return a.tier - b.tier;
-      if (a.c.box !== b.c.box) return a.c.box - b.c.box;
-      return b.c.wrongCount - a.c.wrongCount;
-    });
-
-  const fresh = pool
-    .filter((x) => x.c.history.length === 0)
-    .sort((a, b) => a.tier - b.tier || a.idx - b.idx);
-  const freshPriority = fresh.filter((x) => x.tier === 0); // 優先語＝キャップなし
-  const freshBanks = fresh.filter((x) => x.tier > 0).slice(0, VOCAB_NEW_PER_DAY);
-
-  const ordered = [...reviews, ...freshPriority, ...freshBanks];
-  return ordered.slice(0, VOCAB_DAILY).map((x) => x.p.id);
+  const items = allVocabProblems().map((p, idx) => toQueueItem(p, idx, p.priority ? 0 : 1));
+  return window.DrillQueue.composeDaily(items, {
+    today: todayStr(),
+    daily: VOCAB_DAILY,
+    newMin: VOCAB_NEW_MIN,
+    newTarget: VOCAB_NEW_TARGET,
+    masteredCap: VOCAB_MASTERED_CAP,
+  });
 }
 
 // --- 回答の記録（SRS更新） -----------------------------------
