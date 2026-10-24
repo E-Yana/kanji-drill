@@ -245,5 +245,97 @@
    "reading": "こころ",
    "word": "試みる"
   }
+ ],
+ "fixes": [
+  {
+   "match": {
+    "prompt": "車に{__}。",
+    "answer": "乗"
+   },
+   "set": {
+    "prompt": "車に{__}る。"
+   }
+  },
+  {
+   "match": {
+    "prompt": "球を{__}。",
+    "answer": "投"
+   },
+   "set": {
+    "prompt": "球を{__}げる。"
+   }
+  },
+  {
+   "match": {
+    "prompt": "ひなを{__}。",
+    "answer": "育"
+   },
+   "set": {
+    "prompt": "ひなを{__}てる。"
+   }
+  },
+  {
+   "match": {
+    "prompt": "全体に{__}。",
+    "answer": "関"
+   },
+   "set": {
+    "prompt": "全体に{__}わる。"
+   }
+  },
+  {
+   "match": {
+    "prompt": "新聞を{__}。",
+    "answer": "配"
+   },
+   "set": {
+    "prompt": "新聞を{__}る。"
+   }
+  },
+  {
+   "match": {
+    "prompt": "使命を{__}す。",
+    "answer": "果"
+   },
+   "set": {
+    "prompt": "使命を{__}たす。"
+   }
+  },
+  {
+   "match": {
+    "prompt": "{__}山に登る。",
+    "answer": "富"
+   },
+   "set": {
+    "prompt": "{__}士山に登る。"
+   }
+  },
+  {
+   "match": {
+    "prompt": "水とうを持{__}す。",
+    "answer": "参"
+   },
+   "set": {
+    "prompt": "水とうを持{__}する。"
+   }
+  },
+  {
+   "match": {
+    "prompt": "{__}する",
+    "answer": "予約"
+   },
+   "set": {
+    "prompt": "店を{__}する。"
+   }
+  },
+  {
+   "match": {
+    "prompt": "{__}する",
+    "answer": "観光"
+   },
+   "set": {
+    "prompt": "名所を{__}する。"
+   }
+  }
  ]
 }

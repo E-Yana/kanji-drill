@@ -29,7 +29,7 @@ const FIRST_CORRECT_DAYS = 7;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v19";
+const APP_VERSION = "v20";
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
 // 受け口が ok を返した日、または共有/ダウンロードを実行した日。Drive に入った保証は受け口 ok の時のみ
@@ -756,7 +756,7 @@ function normalizeProblem(obj) {
   word = (word || "").toString().trim();
   prompt = (prompt || "").toString().trim();
   // 空欄記号のゆれを吸収（{__} / {**} / {  } など {…} を全て統一）
-  if (prompt) prompt = prompt.replace(/\{[^}]*\}/g, BLANK_TOKEN);
+  if (prompt) prompt = window.ProblemFix.unifyBlank(prompt);
   if (!answer) return null; // 答えは必須
 
   // word が無ければ prompt から推測 / prompt が無ければ word から作る
@@ -766,7 +766,7 @@ function normalizeProblem(obj) {
     prompt = word.includes(answer) ? word.replace(answer, BLANK_TOKEN) : answer + BLANK_TOKEN;
     if (!prompt.includes(BLANK_TOKEN)) prompt = BLANK_TOKEN; // 念のため
   }
-  if (!prompt.includes(BLANK_TOKEN)) return null; // 書く場所が無い問題は弾く
+  if (!window.ProblemFix.hasBlank(prompt)) return null; // 書く場所が無い問題は弾く
 
   return {
     id: makeImportId(),
@@ -791,6 +791,7 @@ function importFromText(text) {
   }
   let added = 0;
   let skipped = 0;
+  const addedList = [];
   for (const obj of data) {
     const norm = normalizeProblem(obj);
     if (!norm) {
@@ -806,12 +807,17 @@ function importFromText(text) {
       continue;
     }
     store.imported.push(norm);
+    addedList.push(norm);
     added += 1;
   }
   saveStore();
+  // 送りがなの抜け・語の崩れの疑い（自動では直さない＝活用形「急いで」等を壊すため）
+  const suspicious = window.ProblemFix.findSuspicious(addedList).map((p) => p.word);
   return {
     ok: true,
-    msg: `${added}問を取り込みました（最優先で出題します）。${skipped ? "重複・不正で " + skipped + "問スキップ。" : ""}`,
+    msg:
+      `${added}問を取り込みました（最優先で出題します）。${skipped ? "重複・不正で " + skipped + "問スキップ。" : ""}` +
+      (suspicious.length ? `送りがな・語の確認を：${suspicious.join("・")}` : ""),
   };
 }
 
@@ -843,6 +849,8 @@ async function importInboxOnce() {
     return; // オフライン等は黙って次回に回す
   }
   const list = Array.isArray(data && data.problems) ? data.problems : [];
+  // 取り込み済みの問題の直し（例文＋答えで当てる・id と学習記録は残る）
+  const fixed = window.ProblemFix.applyFixes(store.imported, Array.isArray(data && data.fixes) ? data.fixes : []);
   const seen = new Set(store.meta.inboxSeen || []);
   let added = 0;
   let changed = false;
@@ -859,12 +867,12 @@ async function importInboxOnce() {
     seen.add(id);
     changed = true;
   }
-  if (!changed) return;
+  if (!changed && fixed === 0) return;
   store.meta.inboxSeen = Array.from(seen);
   saveStore();
   // 出題中の画面を消さないよう、ホーム表示中だけ描き直す
   const home = document.getElementById("screen-home");
-  if (added > 0 && home && !home.classList.contains("hidden")) renderHome();
+  if (added + fixed > 0 && home && !home.classList.contains("hidden")) renderHome();
 }
 
 /** 1問だけ手入力で追加 */

@@ -41,7 +41,7 @@ window.GRADE3_PROBLEMS = [
   { id: "g3-0036", type: "write", grade: 3, prompt: "{__}をみがく", answer: "歯", reading: "は", word: "歯" },
   { id: "g3-0037", type: "write", grade: 3, prompt: "かばんを{__}つ", answer: "持", reading: "も", word: "持つ" },
   { id: "g3-0038", type: "write", grade: 3, prompt: "木の{__}がなる", answer: "実", reading: "み", word: "実" },
-  { id: "g3-0039", type: "write", grade: 3, prompt: "しゃ{__}をとる", answer: "写", reading: "しゃ", word: "写真" },
+  { id: "g3-0039", type: "write", grade: 3, prompt: "{__}真をとる", answer: "写", reading: "しゃ", word: "写真" },
   { id: "g3-0040", type: "write", grade: 3, prompt: "テストを{__}ける", answer: "受", reading: "う", word: "受ける" },
   { id: "g3-0041", type: "write", grade: 3, prompt: "しゅくだいが{__}わる", answer: "終", reading: "お", word: "終わる" },
   { id: "g3-0042", type: "write", grade: 3, prompt: "ピアノを{__}う", answer: "習", reading: "なら", word: "習う" },
