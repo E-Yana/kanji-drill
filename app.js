@@ -22,10 +22,14 @@ const VOCAB_MASTERED_CAP = 2; // ことば：定着済みの1日の上限（新�
 // Leitner の箱ごとの「次に出すまでの日数」（箱が上がるほど間隔が伸びる）
 const INTERVALS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 30 };
 const MAX_BOX = 5;
+// 漢字：初めて出た日に○だった問題（もう書ける字）は、箱3に置いて次はこの日数後に出す
+// （箱1→2→3の短い間隔の復習を飛ばし、空いた枠を新出へ回す。「おぼえた」には数えない）
+const FIRST_CORRECT_BOX = 3;
+const FIRST_CORRECT_DAYS = 7;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v18";
+const APP_VERSION = "v19";
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
 // 受け口が ok を返した日、または共有/ダウンロードを実行した日。Drive に入った保証は受け口 ok の時のみ
@@ -204,18 +208,32 @@ function buildVocabQueue() {
 }
 
 // --- 回答の記録（SRS更新） -----------------------------------
+/**
+ * 初回○で短い復習を飛ばす対象か（まだ1度も答えていない漢字の問題だけ）。
+ * ことばクイズ（3択で当てずっぽうでも○になる）と、要復習の印つき（学校で間違えた字）は対象外。
+ */
+function isFirstCorrectSkipTarget(id, card) {
+  if (id.startsWith("v-") || card.history.length > 0) return false;
+  const imp = store.imported.find((p) => p.id === id);
+  return !(imp && imp.requireReview);
+}
+
 /** 自己採点の結果を記録し、箱と次回期限を更新する */
 function recordAnswer(id, ok) {
   const c = JSON.parse(JSON.stringify(getCard(id))); // コピーして更新
+  const firstCorrect = ok && isFirstCorrectSkipTarget(id, c);
   c.history.push({ date: todayStr(), result: ok ? "o" : "x" });
-  if (ok) {
+  if (firstCorrect) {
+    c.rightCount += 1;
+    c.box = FIRST_CORRECT_BOX;
+  } else if (ok) {
     c.rightCount += 1;
     c.box = Math.min(c.box + 1, MAX_BOX);
   } else {
     c.wrongCount += 1;
     c.box = 1; // 間違えたら箱1へ戻す＝翌日また出る
   }
-  c.dueDate = addDays(todayStr(), INTERVALS[c.box]);
+  c.dueDate = addDays(todayStr(), firstCorrect ? FIRST_CORRECT_DAYS : INTERVALS[c.box]);
   store.progress[id] = c;
 
   // 取り込んだ要復習フラグは、1回できたら解除（以後は通常のSRSに乗せる）
