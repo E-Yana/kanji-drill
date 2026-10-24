@@ -366,6 +366,18 @@ code {
 .mi-kanji { font-size: 24px; font-weight: 800; color: var(--main); min-width: 36px; }
 .mi-word { flex: 1; font-size: 16px; }
 .mi-flag { font-size: 12px; }
+.mi-warn { color: #8a6d00; margin-right: 4px; }
+
+/* 編集カード（たしかめて とりこむ／なおす） */
+.edit-card { border: 2px solid #d6deea; border-radius: 12px; padding: 10px; margin: 10px 0; background: #fff; }
+.edit-preview .prompt { font-size: 22px; margin: 2px 0; }
+.edit-preview .prompt .blank { width: 32px; height: 32px; }
+.edit-issues { list-style: none; padding: 0; margin: 8px 0; font-size: 14px; }
+.edit-issues .stop { color: var(--ng); font-weight: 700; }
+.edit-issues .warn { color: #8a6d00; }
+.edit-issues .ok { color: var(--ok); }
+.edit-buttons { display: flex; gap: 10px; align-items: center; }
+.edit-buttons .mid-btn:disabled { opacity: 0.4; }
 
 /* ドライブの せってい（折りたたみ） */
 .restore-box { margin-top: 12px; }

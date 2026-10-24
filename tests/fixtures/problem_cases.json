@@ -1,0 +1,471 @@
+{
+ "_note": "problem_fix.js の checkProblem の見本。expect＝出てほしいルール名、level＝一番重い段階（stop／warn／none）。2026-10-24 の実例から作成",
+ "cases": [
+  {
+   "note": "送りがな抜け",
+   "problem": {
+    "prompt": "車に{__}。",
+    "answer": "乗",
+    "reading": "の",
+    "word": "乗る"
+   },
+   "expect": [
+    "okuri_missing"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "送りがな抜け",
+   "problem": {
+    "prompt": "球を{__}。",
+    "answer": "投",
+    "reading": "な",
+    "word": "投げる"
+   },
+   "expect": [
+    "okuri_missing"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "送りがな抜け",
+   "problem": {
+    "prompt": "ひなを{__}。",
+    "answer": "育",
+    "reading": "そだ",
+    "word": "育てる"
+   },
+   "expect": [
+    "okuri_missing"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "送りがな抜け",
+   "problem": {
+    "prompt": "全体に{__}。",
+    "answer": "関",
+    "reading": "かか",
+    "word": "関わる"
+   },
+   "expect": [
+    "okuri_missing"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "送りがな抜け",
+   "problem": {
+    "prompt": "新聞を{__}。",
+    "answer": "配",
+    "reading": "くば",
+    "word": "配る"
+   },
+   "expect": [
+    "okuri_missing"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "送りがなの一部抜け（果す）",
+   "problem": {
+    "prompt": "使命を{__}す。",
+    "answer": "果",
+    "reading": "はた",
+    "word": "果たす"
+   },
+   "expect": [
+    "okuri_missing"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "語の崩れ（富山）",
+   "problem": {
+    "prompt": "{__}山に登る。",
+    "answer": "富",
+    "reading": "ふ",
+    "word": "富士山"
+   },
+   "expect": [
+    "word_mismatch"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "語の崩れ（しゃ写）",
+   "problem": {
+    "prompt": "しゃ{__}をとる",
+    "answer": "写",
+    "reading": "しゃ",
+    "word": "写真"
+   },
+   "expect": [
+    "word_mismatch"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "余計なかな（持参す）",
+   "problem": {
+    "prompt": "水とうを持{__}す。",
+    "answer": "参",
+    "reading": "さん",
+    "word": "持参"
+   },
+   "expect": [
+    "extra_su"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "手がかりが薄い",
+   "problem": {
+    "prompt": "{__}する",
+    "answer": "予約",
+    "reading": "よやく",
+    "word": "予約"
+   },
+   "expect": [
+    "thin_context"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "手がかりが薄い",
+   "problem": {
+    "prompt": "{__}する",
+    "answer": "観光",
+    "reading": "かんこう",
+    "word": "観光"
+   },
+   "expect": [
+    "thin_context"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "例文が空",
+   "problem": {
+    "prompt": "",
+    "answer": "乗",
+    "reading": "の",
+    "word": "乗る"
+   },
+   "expect": [
+    "prompt_empty"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "{__}が無い",
+   "problem": {
+    "prompt": "車にのる。",
+    "answer": "乗",
+    "reading": "の",
+    "word": "乗る"
+   },
+   "expect": [
+    "blank_missing"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "{__}が2つ",
+   "problem": {
+    "prompt": "{__}に{__}る。",
+    "answer": "乗",
+    "reading": "の",
+    "word": "乗る"
+   },
+   "expect": [
+    "blank_many"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "答えが空",
+   "problem": {
+    "prompt": "車に{__}る。",
+    "answer": "",
+    "reading": "の",
+    "word": "乗る"
+   },
+   "expect": [
+    "answer_empty"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "答えに記号",
+   "problem": {
+    "prompt": "車に{__}る。",
+    "answer": "乗(る)",
+    "reading": "の",
+    "word": "乗る"
+   },
+   "expect": [
+    "answer_chars"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "読みが漢字",
+   "problem": {
+    "prompt": "車に{__}る。",
+    "answer": "乗",
+    "reading": "乗",
+    "word": "乗る"
+   },
+   "expect": [
+    "reading_chars"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "答えの漢字が語に無い",
+   "problem": {
+    "prompt": "車に{__}る。",
+    "answer": "乗",
+    "reading": "の",
+    "word": "走る"
+   },
+   "expect": [
+    "answer_not_in_word"
+   ],
+   "level": "stop"
+  },
+  {
+   "note": "語が空",
+   "problem": {
+    "prompt": "車に{__}る。",
+    "answer": "乗",
+    "reading": "の",
+    "word": ""
+   },
+   "expect": [
+    "word_empty"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "かな交じり",
+   "problem": {
+    "prompt": "{__}ふくをたたむ",
+    "answer": "衣",
+    "reading": "い",
+    "word": "衣服"
+   },
+   "expect": [
+    "word_mismatch"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "かな交じり",
+   "problem": {
+    "prompt": "けいさつ{__}になる",
+    "answer": "官",
+    "reading": "かん",
+    "word": "警察官"
+   },
+   "expect": [
+    "word_mismatch"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "活用形（急いで）",
+   "problem": {
+    "prompt": "{__}いで走る",
+    "answer": "急",
+    "reading": "いそ",
+    "word": "急ぐ"
+   },
+   "expect": [
+    "word_mismatch"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "かな交じり",
+   "problem": {
+    "prompt": "じゅ{__}を受ける",
+    "answer": "業",
+    "reading": "ぎょう",
+    "word": "授業"
+   },
+   "expect": [
+    "word_mismatch"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "かな交じり",
+   "problem": {
+    "prompt": "{__}体そうの選手",
+    "answer": "器械",
+    "reading": "きかい",
+    "word": "器械体操"
+   },
+   "expect": [
+    "word_mismatch"
+   ],
+   "level": "warn"
+  },
+  {
+   "note": "短いが正しい",
+   "problem": {
+    "prompt": "月が{__}。",
+    "answer": "満ちる",
+    "reading": "みちる",
+    "word": "満ちる"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "短いが正しい",
+   "problem": {
+    "prompt": "{__}待つ。",
+    "answer": "静かに",
+    "reading": "しずかに",
+    "word": "静かに"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "短いが正しい",
+   "problem": {
+    "prompt": "国の{__}。",
+    "answer": "政治",
+    "reading": "せいじ",
+    "word": "政治"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "短いが正しい",
+   "problem": {
+    "prompt": "花の{__}。",
+    "answer": "種類",
+    "reading": "しゅるい",
+    "word": "種類"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "短いが正しい",
+   "problem": {
+    "prompt": "学級{__}",
+    "answer": "委員",
+    "reading": "いいん",
+    "word": "委員"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "短いが正しい",
+   "problem": {
+    "prompt": "道の{__}。",
+    "answer": "案内",
+    "reading": "あんない",
+    "word": "案内"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "短いが正しい",
+   "problem": {
+    "prompt": "{__}心力",
+    "answer": "遠",
+    "reading": "えん",
+    "word": "遠心力"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "直した後",
+   "problem": {
+    "prompt": "車に{__}る。",
+    "answer": "乗",
+    "reading": "の",
+    "word": "乗る"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "直した後",
+   "problem": {
+    "prompt": "使命を{__}たす。",
+    "answer": "果",
+    "reading": "はた",
+    "word": "果たす"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "直した後",
+   "problem": {
+    "prompt": "水とうを持{__}する。",
+    "answer": "参",
+    "reading": "さん",
+    "word": "持参"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "直した後",
+   "problem": {
+    "prompt": "店を{__}する。",
+    "answer": "予約",
+    "reading": "よやく",
+    "word": "予約"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "送りがなを答えに含む",
+   "problem": {
+    "prompt": "文の{__}立ち",
+    "answer": "成り",
+    "reading": "なり",
+    "word": "成り立ち"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "送りがなを答えに含む",
+   "problem": {
+    "prompt": "月が{__}。",
+    "answer": "満ちる",
+    "reading": "みちる",
+    "word": "満ちる"
+   },
+   "expect": [],
+   "level": "none"
+  },
+  {
+   "note": "普通",
+   "problem": {
+    "prompt": "目を{__}ます",
+    "answer": "覚",
+    "reading": "さ",
+    "word": "覚ます"
+   },
+   "expect": [],
+   "level": "none"
+  }
+ ]
+}

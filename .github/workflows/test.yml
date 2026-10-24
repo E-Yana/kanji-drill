@@ -1,0 +1,17 @@
+# 問題ファイル（inbox.json・同梱バンク）と処理の試験を、push と PR のたびに自動で走らせる
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: 試験（tests/*_test.js を全部）
+        run: for f in tests/*_test.js; do node "$f" || exit 1; done
+      - name: inbox.json の検査
+        run: node tools/check_problems.js inbox.json

@@ -33,22 +33,50 @@ const inbox = JSON.parse(fs.readFileSync(path.join(ROOT, "inbox.json"), "utf8"))
 
 /** 端末の取り込み済みの問題を模した1件 */
 function imported(id, prompt, answer, word) {
-  return { id, type: "write", grade: 4, prompt, answer, reading: "", word, requireReview: true, createdAt: "2026-10-01" };
+  return { id, type: "write", grade: 4, prompt, answer, reading: "よみ", word, requireReview: true, createdAt: "2026-10-01" };
 }
 
-test("同梱バンクと inbox に送りがな抜け・語の崩れが無い（既知のかな交じりを除く）", () => {
+const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "problem_cases.json"), "utf8")).cases;
+
+/** 指摘の一覧から一番重い段階 */
+function topLevel(issues) {
+  if (PF.hasStop(issues)) return "stop";
+  return issues.length ? "warn" : "none";
+}
+
+test("見本：拾うべきものを拾い、正しいものは止めない", () => {
+  fixtures.forEach((c) => {
+    const issues = PF.checkProblem(c.problem);
+    const rules = issues.map((x) => x.rule);
+    assert.deepStrictEqual(rules, c.expect, c.note + " " + c.problem.prompt);
+    assert.strictEqual(topLevel(issues), c.level, c.note + " " + c.problem.prompt);
+  });
+});
+
+test("同梱バンクと inbox に「止める」が無く、「確認」は既知のかな交じりだけ", () => {
   const all = [].concat(
     loadBank("kanji_data.js", "SEED_PROBLEMS"),
     loadBank("grade3_data.js", "GRADE3_PROBLEMS"),
     inbox.problems
   );
-  const bad = PF.findSuspicious(all).filter((p) => !KNOWN_KANA_MIXED.includes(p.id));
-  assert.deepStrictEqual(bad.map((p) => p.id + " " + p.prompt), []);
+  const flagged = all.filter((p) => PF.checkProblem(p).length);
+  assert.deepStrictEqual(flagged.filter((p) => PF.hasStop(PF.checkProblem(p))).map((p) => p.id), []);
+  assert.deepStrictEqual(flagged.map((p) => p.id).filter((id) => !KNOWN_KANA_MIXED.includes(id)), []);
 });
 
-test("検査は送りがな抜けを拾い、正しい問題は拾わない", () => {
-  const list = [imported("a", "車に{__}。", "乗", "乗る"), imported("b", "車に{__}る。", "乗", "乗る")];
-  assert.deepStrictEqual(PF.findSuspicious(list).map((p) => p.id), ["a"]);
+test("生の行を検査する：正規化なら黙って捨てる・語を自動で作る行も指摘が出る", () => {
+  assert.ok(PF.hasStop(PF.checkProblem({ prompt: "", answer: "乗", reading: "の", word: "乗る" })));
+  assert.ok(PF.hasStop(PF.checkProblem({ prompt: "車に{__}る。", answer: "", reading: "の" })));
+  assert.ok(PF.hasStop(PF.checkProblem({ prompt: "{__}と{__}", answer: "乗", reading: "の", word: "乗" })));
+  assert.deepStrictEqual(PF.checkProblem({ prompt: "車に{__}る。", answer: "乗", reading: "の" }).map((x) => x.rule), ["word_empty"]);
+  assert.ok(PF.hasStop(PF.checkProblem(null)));
+});
+
+test("空欄記号のゆれ（{**}・写真変換スキルの (__)・（＿＿））は検査の前に揃える", () => {
+  assert.deepStrictEqual(PF.checkProblem({ prompt: "車に{**}る。", answer: "乗", reading: "の", word: "乗る" }), []);
+  assert.deepStrictEqual(PF.checkProblem({ prompt: "目を(__)ます", answer: "覚", reading: "さ", word: "覚ます" }), []);
+  assert.strictEqual(PF.unifyBlank("目を（＿＿）ます"), "目を{__}ます");
+  assert.strictEqual(PF.unifyBlank("(注)目を(__)ます"), "(注)目を{__}ます"); // 下線以外のかっこは残す
 });
 
 test("inbox の直しはどれも、直した後の問題が検査を通る", () => {

@@ -18,7 +18,13 @@
 - `match` は端末にある例文＋答えの完全一致（端末の中身は Drive の `kanji_drill_latest.json` の `state.imported` で見る）。`set` で変えられるのは prompt・answer・reading・word だけ
 - 直した後は一致しなくなるので、残しておいても二重には直らない。直した結果が別の問題と重なる時・`{__}` が無い時は飛ばす
 - 同梱の `kanji_data.js`・`grade3_data.js` は id が固定なので、そのファイルを直接直す（版上げが要る）
-- 検査：`node tests/problem_check_test.js`（送りがな抜け・語の崩れ＝答えを入れた文に word が含まれるか）。⚠️「持参す」のように語の後ろに余計なかなが付く形・「{__}する」のように手がかりが薄い形は拾えないので目でも見る。処理は `problem_fix.js`
+- 直したら `node tools/check_problems.js inbox.json` で「止める」0件を確かめる
+
+## 問題の検査（2026-10-24〜・v21）
+- 検査は `problem_fix.js` の `checkProblem`（1か所）。段階は「止める」（空欄・答え・読みの形の崩れ、送りがな抜け、答えの漢字が語に無い）と「確認」（答えを入れた文に語が無い・「〜す」で終わる・手がかりが薄い・語が空）
+- 使う場所：①管理画面の貼り付け／1問追加＝検査に掛かった行は取り込まず「たしかめて とりこむ」の編集カードへ（別キー `kanjiDrill_pendingImport`・バックアップ対象外・再読み込みでも残る）②取り込み済みの一覧＝⚠印と「なおす」（id・学習記録は残る）③GitHub Actions（`.github/workflows/test.yml`）＝push・PRで全試験＋inbox の検査④`node tools/check_problems.js <inbox.json｜バックアップJSON｜配列>`＝「止める」があれば終了コード1
+- ルールを変えたら `tests/fixtures/problem_cases.json`（10/24の実例11件＋正しい問題）に見本を足し、`for f in tests/*_test.js; do node "$f" || exit 1; done`
+- ⚠️ 検査は配当学年の外の漢字を見ない。かな交じり（衣ふく）は「確認」に出るが正しい
 
 ## 守ること
 - `app.js` の `APP_VERSION` と `sw.js` の `CACHE` は対で上げる（アプリ本体を変えた時だけ。`inbox.json` だけの更新は不要）

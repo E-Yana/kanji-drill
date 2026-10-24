@@ -29,7 +29,7 @@ const FIRST_CORRECT_DAYS = 7;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v20";
+const APP_VERSION = "v21";
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
 // 受け口が ok を返した日、または共有/ダウンロードを実行した日。Drive に入った保証は受け口 ok の時のみ
@@ -39,6 +39,7 @@ const DRIVE_TIMEOUT_MS = 15000; // 受け口への送信の時間切れ
 const MSG_DRIVE_OK = "ドライブに ほぞんしました";
 const MSG_DRIVE_FAILED = "ドライブに ほぞんできませんでした。もう一度 おすと ファイルで ほぞん";
 const RESTORE_KEY_PREFIX = "kanjiDrill_v1_restore_"; // 復元前の退避キー（+日付）
+const PENDING_KEY = "kanjiDrill_pendingImport"; // 検査に掛かって未取り込みの行（記録と別キー・バックアップ対象外）
 const WEAK_TOP_N = 10; // バックアップ要約に載せる苦手の件数
 const MSG_BACKUP_SHARED = "ほぞんの がめんを ひらきました。「ファイルに ほぞん」→「ドライブ」";
 const MSG_BACKUP_DOWNLOADED = "ファイルを ダウンロードしました";
@@ -781,7 +782,7 @@ function normalizeProblem(obj) {
   };
 }
 
-/** まとめて貼り付け取り込み */
+/** まとめて貼り付け取り込み。検査に掛かった行は取り込まず「たしかめて とりこむ」の列へ回す */
 function importFromText(text) {
   let data;
   try {
@@ -791,34 +792,39 @@ function importFromText(text) {
   }
   let added = 0;
   let skipped = 0;
-  const addedList = [];
+  const held = [];
   for (const obj of data) {
-    const norm = normalizeProblem(obj);
-    if (!norm) {
+    if (!obj || typeof obj !== "object") {
       skipped += 1;
       continue;
     }
-    // 重複（同じ例文＋答え）はスキップ
-    const dup = store.imported.some(
-      (p) => p.prompt === norm.prompt && p.answer === norm.answer
-    );
-    if (dup) {
-      skipped += 1;
+    // 検査は正規化の前の生の行にかける（正規化は不正な行を黙って捨て、語を自動で作るため）
+    if (window.ProblemFix.checkProblem(obj).length) {
+      held.push(obj);
+      continue;
+    }
+    const norm = normalizeProblem(obj);
+    if (!norm || isDuplicateProblem(norm.prompt, norm.answer)) {
+      skipped += 1; // 重複（同じ例文＋答え）はスキップ
       continue;
     }
     store.imported.push(norm);
-    addedList.push(norm);
     added += 1;
   }
   saveStore();
-  // 送りがなの抜け・語の崩れの疑い（自動では直さない＝活用形「急いで」等を壊すため）
-  const suspicious = window.ProblemFix.findSuspicious(addedList).map((p) => p.word);
+  addPending(held);
   return {
     ok: true,
     msg:
-      `${added}問を取り込みました（最優先で出題します）。${skipped ? "重複・不正で " + skipped + "問スキップ。" : ""}` +
-      (suspicious.length ? `送りがな・語の確認を：${suspicious.join("・")}` : ""),
+      `${added}問を取り込みました（最優先で出題します）。` +
+      (held.length ? `${held.length}問は 下の「たしかめて とりこむ」で 直してから とりこめます。` : "") +
+      (skipped ? "重複・不正で " + skipped + "問スキップ。" : ""),
   };
+}
+
+/** 取り込み済みに同じ例文＋答えがあるか（exceptId の問題は除く） */
+function isDuplicateProblem(prompt, answer, exceptId) {
+  return store.imported.some((p) => p.id !== exceptId && p.prompt === prompt && p.answer === answer);
 }
 
 /** 同梱の優先問題（priority_data.js）を初回だけ要復習として取り込む */
@@ -877,7 +883,12 @@ async function importInboxOnce() {
 
 /** 1問だけ手入力で追加 */
 function addOneProblem(prompt, answer, reading, word) {
-  const norm = normalizeProblem({ prompt, answer, reading, word });
+  const raw = { prompt, answer, reading, word };
+  if (window.ProblemFix.checkProblem(raw).length) {
+    addPending([raw]);
+    return { ok: true, msg: "下の「たしかめて とりこむ」で たしかめてから とりこんでね。" };
+  }
+  const norm = normalizeProblem(raw);
   if (!norm) return { ok: false, msg: "「答え」と、{__}を含む例文を入れてください。" };
   store.imported.push(norm);
   saveStore();
@@ -898,9 +909,10 @@ function renderManageSummary() {
     `<p class="muted small">とりこむほど分母も増えるため、ホーム画面には割合を出さず「おぼえた数」だけを表示しています。</p>`;
 }
 
-/** 取り込み問題の一覧を描画（個別削除つき） */
+/** 取り込み問題の一覧を描画（⚠印・なおす・けす） */
 function renderManageList() {
   renderManageSummary(); // 取り込み・削除のたびに呼ばれるので、問題数の内訳もここで一緒に更新する
+  renderPendingList();
   const box = document.getElementById("manage-list");
   if (store.imported.length === 0) {
     box.innerHTML = '<p class="muted">取り込んだ問題はまだありません。</p>';
@@ -908,17 +920,28 @@ function renderManageList() {
   }
   box.innerHTML = store.imported
     .map((p) => {
+      if (p.id === manageEditingId) {
+        return editorCardHtml(p, `data-edit-id="${escapeHtml(p.id)}"`, "ほぞん", "やめる");
+      }
       const flag = p.requireReview ? "🔴要復習" : "学習中";
+      const warn = window.ProblemFix.checkProblem(p).length ? '<span class="mi-warn">⚠</span>' : "";
       return (
         `<div class="manage-item">` +
         `<span class="mi-kanji">${escapeHtml(p.answer)}</span>` +
-        `<span class="mi-word">${escapeHtml(p.word)}</span>` +
+        `<span class="mi-word">${warn}${escapeHtml(p.word)}</span>` +
         `<span class="mi-flag muted">${flag}</span>` +
-        `<button data-del="${p.id}" class="mini-btn">けす</button>` +
+        `<button data-fix="${escapeHtml(p.id)}" class="mini-btn">なおす</button>` +
+        `<button data-del="${escapeHtml(p.id)}" class="mini-btn">けす</button>` +
         `</div>`
       );
     })
     .join("");
+  box.querySelectorAll("button[data-fix]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      manageEditingId = btn.getAttribute("data-fix");
+      renderManageList();
+    });
+  });
   // 削除ボタン
   box.querySelectorAll("button[data-del]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -929,6 +952,148 @@ function renderManageList() {
       renderManageList();
     });
   });
+  box.querySelectorAll(".edit-card").forEach((card) => {
+    bindEditorCard(card, (values) => saveEditedProblem(card.getAttribute("data-edit-id"), values), () => {
+      manageEditingId = null;
+      renderManageList();
+    });
+  });
+}
+
+// --- 編集カード（たしかめて とりこむ／取り込み済みを なおす） ---------------------
+let manageEditingId = null; // 一覧で なおしている問題の id
+
+/** 未取り込みの列を読む（記録とは別キー・バックアップ対象外） */
+function loadPending() {
+  try {
+    const list = JSON.parse(localStorage.getItem(PENDING_KEY) || "[]");
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** 未取り込みの列を書く（空なら消す） */
+function savePending(list) {
+  try {
+    if (list.length) localStorage.setItem(PENDING_KEY, JSON.stringify(list));
+    else localStorage.removeItem(PENDING_KEY);
+  } catch (e) {
+    // 保存できない環境でも取り込み自体は続ける
+  }
+}
+
+/** 生の行を、編集カード用の4項目（＋並びの鍵）にして列へ足す */
+function addPending(rows) {
+  if (!rows.length) return;
+  const text = (v) => (v === undefined || v === null ? "" : String(v));
+  const list = loadPending();
+  rows.forEach((r) =>
+    list.push({ key: makeImportId(), prompt: text(r.prompt), answer: text(r.answer), reading: text(r.reading), word: text(r.word) })
+  );
+  savePending(list);
+}
+
+/** 編集カードのHTML（4つの欄・見え方の見本・指摘・ボタン） */
+function editorCardHtml(v, attr, saveLabel, cancelLabel) {
+  const field = (name, label) =>
+    `<label>${label}<input type="text" data-field="${name}" value="${escapeHtml(v[name] || "")}" /></label>`;
+  return (
+    `<div class="edit-card" ${attr}>` +
+    `<div class="edit-preview"></div>` +
+    field("prompt", "れいぶん（書く場所は {__}）") +
+    field("answer", "答えの かんじ") +
+    field("reading", "読み") +
+    field("word", "こたえの ことば") +
+    `<ul class="edit-issues"></ul>` +
+    `<div class="edit-buttons"><button class="mid-btn primary" data-act="save">${saveLabel}</button>` +
+    `<button class="mini-btn" data-act="cancel">${cancelLabel}</button></div>` +
+    `<p class="form-msg"></p>` +
+    `</div>`
+  );
+}
+
+/** カードの欄の値 */
+function cardValues(card) {
+  const v = {};
+  card.querySelectorAll("input[data-field]").forEach((el) => (v[el.getAttribute("data-field")] = el.value));
+  return v;
+}
+
+/** 入力のたびに検査し直し、見本・指摘・保存ボタンを更新する */
+function refreshEditorCard(card) {
+  const v = cardValues(card);
+  const issues = window.ProblemFix.checkProblem(v);
+  const prompt = window.ProblemFix.unifyBlank(v.prompt.trim());
+  const promptHtml = escapeHtml(prompt).replace(escapeHtml(BLANK_TOKEN), buildBlankHtml(v.answer.trim()));
+  card.querySelector(".edit-preview").innerHTML =
+    `<div class="muted small">${escapeHtml(v.reading.trim())}</div><div class="prompt">${promptHtml}</div>`;
+  card.querySelector(".edit-issues").innerHTML = issues.length
+    ? issues.map((x) => `<li class="${x.level}">${x.level === "stop" ? "⛔" : "⚠"} ${escapeHtml(x.msg)}</li>`).join("")
+    : '<li class="ok">✅ もんだい ありません</li>';
+  card.querySelector('[data-act="save"]').disabled = window.ProblemFix.hasStop(issues);
+}
+
+/** カードに入力・保存・取り消しを結線する。onSave は {ok,msg} を返す */
+function bindEditorCard(card, onSave, onCancel) {
+  card.querySelectorAll("input[data-field]").forEach((el) => el.addEventListener("input", () => refreshEditorCard(card)));
+  card.querySelector('[data-act="save"]').addEventListener("click", () => {
+    const res = onSave(cardValues(card));
+    if (!res.ok) {
+      const msg = card.querySelector(".form-msg");
+      msg.textContent = res.msg;
+      msg.className = "form-msg ng";
+    }
+  });
+  card.querySelector('[data-act="cancel"]').addEventListener("click", onCancel);
+  refreshEditorCard(card);
+}
+
+/** 「たしかめて とりこむ」の列を描画 */
+function renderPendingList() {
+  const list = loadPending();
+  document.getElementById("pending-panel").classList.toggle("hidden", list.length === 0);
+  const box = document.getElementById("pending-list");
+  box.innerHTML = list.map((v) => editorCardHtml(v, `data-key="${escapeHtml(v.key)}"`, "とりこむ", "すてる")).join("");
+  box.querySelectorAll(".edit-card").forEach((card) => {
+    const key = card.getAttribute("data-key");
+    bindEditorCard(card, (values) => importPendingItem(key, values), () => {
+      if (!confirm("この問題を すてますか？")) return;
+      savePending(loadPending().filter((x) => x.key !== key));
+      renderPendingList();
+    });
+  });
+}
+
+/** 列の1問を取り込む（直した値で） */
+function importPendingItem(key, values) {
+  if (window.ProblemFix.hasStop(window.ProblemFix.checkProblem(values))) return { ok: false, msg: "⛔の ところを 直してください。" };
+  const norm = normalizeProblem(values);
+  if (!norm) return { ok: false, msg: "例文と 答えを たしかめてください。" };
+  if (isDuplicateProblem(norm.prompt, norm.answer)) return { ok: false, msg: "同じ問題が もう あります。" };
+  store.imported.push(norm);
+  saveStore();
+  savePending(loadPending().filter((x) => x.key !== key));
+  renderManageList();
+  return { ok: true, msg: "" };
+}
+
+/** 取り込み済みの問題を直す（id・学習記録・要復習の印は残す） */
+function saveEditedProblem(id, values) {
+  if (window.ProblemFix.hasStop(window.ProblemFix.checkProblem(values))) return { ok: false, msg: "⛔の ところを 直してください。" };
+  const p = store.imported.find((x) => x.id === id);
+  if (!p) return { ok: false, msg: "問題が 見つかりません。" };
+  const prompt = window.ProblemFix.unifyBlank(values.prompt.trim());
+  const answer = values.answer.trim();
+  if (isDuplicateProblem(prompt, answer, id)) return { ok: false, msg: "同じ問題が もう あります。" };
+  p.prompt = prompt;
+  p.answer = answer;
+  p.reading = values.reading.trim();
+  p.word = values.word.trim() || prompt.replace(BLANK_TOKEN, answer);
+  saveStore();
+  manageEditingId = null;
+  renderManageList();
+  return { ok: true, msg: "" };
 }
 
 // --- バックアップ兼きろく（保存 / 復元） ---------------------
@@ -1219,6 +1384,7 @@ function flashMsg(elId, result) {
 // ============================================================
 /** 管理画面（とりこみ・せってい・バックアップ）を開く */
 function openManage() {
+  manageEditingId = null;
   renderManageList();
   document.getElementById("import-msg").textContent = "";
   document.getElementById("add-msg").textContent = "";
