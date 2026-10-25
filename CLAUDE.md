@@ -44,3 +44,4 @@
 - 受け口は Apps Script「学習アプリ受け口」（3アプリ共用・`tani_drill/CLAUDE.md` 参照）
 - 復元前の退避は `kanjiDrill_v1_restore_<日付>[_n]`（新しい2本だけ残る）。戻したい時は、その値を `kanjiDrill_v1` に書き戻す
 - 復元しても `inboxSeen` は合算しない（バックアップ後に足した inbox の問題は復元後に取り込み直される）
+- 結果画面の自動送信（v24〜）：漢字・ことばクイズの結果画面に入ったら、ドライブ設定済みの時だけ裏で送る（`autoBackupToDrive`・入口は `enterResultScreen`）。仕様は `.claude/rules/home-apps.md` の自動送信の行と同じ。写真の取り込み（`driveImportBusy`）とは旗が別

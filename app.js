@@ -29,7 +29,7 @@ const FIRST_CORRECT_DAYS = 7;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v23";
+const APP_VERSION = "v24";
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
 // 受け口が ok を返した日、または共有/ダウンロードを実行した日。Drive に入った保証は受け口 ok の時のみ
@@ -584,7 +584,7 @@ function finishSession() {
   const btnVocabStart = document.getElementById("btn-vocab-start");
   btnVocabStart.classList.toggle("hidden", !(vocabQueue.length > 0 && !vocabDoneToday));
 
-  showScreen("result");
+  enterResultScreen();
 }
 
 // ============================================================
@@ -722,7 +722,7 @@ function finishVocabSession() {
       "</div>";
   }
   document.getElementById("btn-vocab-start").classList.add("hidden");
-  showScreen("result");
+  enterResultScreen();
 }
 
 // ============================================================
@@ -1243,7 +1243,8 @@ function showBackupStatus(text, ok = true) {
 }
 
 let fileFallbackPending = false; // ドライブ送信に失敗済み＝次のタップで共有/ダウンロードを開く
-let driveBusy = false; // ドライブ送信中の二重タップ防止
+let driveBusy = false; // ドライブ送信中の二重タップ防止（自動送信中も立てる）
+let autoBackupPromise = null; // 結果画面からの自動送信（送信中だけ値が入る）
 
 /** 受け口へ送って ok:true を読めた時だけ true を返す（時間切れ・オフライン・非200・壊れた応答は false）。 */
 async function sendToDrive(settings, backup, kind) {
@@ -1306,9 +1307,8 @@ async function saveBackupToDrive(settings, backup) {
   }
 }
 
-/** きろくを保存する（ドライブ設定済みなら受け口へ。未設定・失敗の次のタップは共有シート/ダウンロード） */
-async function saveBackup() {
-  if (driveBusy) return;
+/** 送る中身の組み立て（手動ボタンと自動送信で共用） */
+function makeBackup() {
   const today = todayStr();
   const backup = DrillBackup.buildBackup({
     appId: BACKUP_APP_ID,
@@ -1317,6 +1317,52 @@ async function saveBackup() {
     summary: buildBackupSummary(),
     state: store,
   });
+  return { today, backup };
+}
+
+/** 自動送信が送信中なら、その旨を出して終わるのを待つ（黙って無視しない） */
+async function waitAutoBackup(showStatus) {
+  if (!autoBackupPromise) return;
+  showStatus("ドライブに ほぞんしています…");
+  await autoBackupPromise;
+}
+
+/**
+ * テスト終了時の自動送信。未設定・送信中なら何もしない。
+ * 成功時だけ保存日を記録し、失敗時は何も触らない（画面にも出さない）。
+ */
+function autoBackupToDrive() {
+  if (driveBusy) return;
+  const settings = DrillBackup.parseDriveSettings(safeGetDriveSync());
+  if (!settings) return;
+  driveBusy = true;
+  autoBackupPromise = (async () => {
+    try {
+      if (await sendToDrive(settings, makeBackup().backup, "backup")) {
+        fileFallbackPending = false;
+        setLastBackup();
+        updateBackupReminder(todayStr());
+      }
+    } catch (e) {
+      // 自動送信の失敗は無言（従来の手動ボタンと7日の促しが安全網）
+    } finally {
+      driveBusy = false;
+      autoBackupPromise = null;
+    }
+  })();
+}
+
+/** 結果画面へ入る（表示のあと、ドライブ設定済みなら裏で自動送信する） */
+function enterResultScreen() {
+  showScreen("result");
+  autoBackupToDrive(); // 結果画面の表示は待たない
+}
+
+/** きろくを保存する（ドライブ設定済みなら受け口へ。未設定・失敗の次のタップは共有シート/ダウンロード） */
+async function saveBackup() {
+  await waitAutoBackup((text) => showBackupStatus(text));
+  if (driveBusy) return;
+  const { today, backup } = makeBackup();
   const file = new File([JSON.stringify(backup, null, 2)], DrillBackup.backupFileName(BACKUP_APP_ID, today), {
     type: "application/json",
   });
@@ -1378,6 +1424,7 @@ function saveDriveSettings() {
 
 /** 本物のバックアップを kind:"test" で送る（latest を汚さない） */
 async function testDrive() {
+  await waitAutoBackup((text) => setDriveStatus(text));
   if (driveBusy) return;
   const s = readDriveForm();
   if (!s) {
@@ -1387,14 +1434,7 @@ async function testDrive() {
   driveBusy = true;
   setDriveStatus("ためしています…");
   try {
-    const backup = DrillBackup.buildBackup({
-      appId: BACKUP_APP_ID,
-      appVersion: APP_VERSION,
-      today: todayStr(),
-      summary: buildBackupSummary(),
-      state: store,
-    });
-    const ok = await sendToDrive(s, backup, "test");
+    const ok = await sendToDrive(s, makeBackup().backup, "test");
     setDriveStatus(ok ? "ためしに ほぞんできました" : "ためしに ほぞんできませんでした", ok);
   } finally {
     driveBusy = false;
