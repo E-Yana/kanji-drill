@@ -29,13 +29,15 @@ const FIRST_CORRECT_DAYS = 7;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
 // 受け口が ok を返した日、または共有/ダウンロードを実行した日。Drive に入った保証は受け口 ok の時のみ
 const LAST_BACKUP_KEY = "kanjiDrill_lastBackup";
 const DRIVE_SYNC_KEY = "kanjiDrill_driveSync"; // ドライブ受け口の設定 {url, token}（記録とは別キー）
 const DRIVE_TIMEOUT_MS = 15000; // 受け口への送信の時間切れ
+const DRIVE_IMPORT_POLL_MS = 3 * 60 * 1000; // 開いている間、取り込み待ちを見に行く間隔
+const DRIVE_IMPORT_MIN_GAP_MS = 30 * 1000; // 画面に戻った時の連続呼び出しを間引く最短間隔
 const MSG_DRIVE_OK = "ドライブに ほぞんしました";
 const MSG_DRIVE_FAILED = "ドライブに ほぞんできませんでした。もう一度 おすと ファイルで ほぞん";
 const RESTORE_KEY_PREFIX = "kanjiDrill_v1_restore_"; // 復元前の退避キー（+日付）
@@ -945,8 +947,18 @@ async function importFromDrive() {
   }
 }
 
-/** 起動時の取り込み。何か入った時だけホームに1行出す（出題中の画面は描き直さない） */
+let driveImportLastAt = 0; // 最後に取り込み待ちを見に行った時刻（ms）
+
+/** 画面に戻った時・定期の取り込み。前回から間が空いていない時と、画面が裏にある時は見に行かない */
+function importFromDriveIfDue() {
+  if (document.visibilityState !== "visible") return;
+  if (Date.now() - driveImportLastAt < DRIVE_IMPORT_MIN_GAP_MS) return;
+  importFromDriveOnStart();
+}
+
+/** 起動時・画面に戻った時・定期の取り込み。何か入った時だけホームに1行出す（出題中の画面は描き直さない） */
 async function importFromDriveOnStart() {
+  driveImportLastAt = Date.now();
   const res = await importFromDrive();
   if (!res || (res.added + res.held === 0 && res.bad.length === 0)) return;
   const note = document.getElementById("home-import-note");
@@ -1558,6 +1570,10 @@ function main() {
   seedPriorityOnce(); // 同梱の優先問題を初回だけ投入
   importInboxOnce(); // 公開サイトの追加問題を取り込む（失敗しても無視）
   importFromDriveOnStart(); // ドライブの取り込み待ち（写真から）を取り込む（未設定・失敗なら何もしない）
+  // 裏に残ったアプリを前に出した時と、開いている間も数分おきに取り込み待ちを見に行く
+  document.addEventListener("visibilitychange", importFromDriveIfDue);
+  window.addEventListener("pageshow", importFromDriveIfDue);
+  setInterval(importFromDriveIfDue, DRIVE_IMPORT_POLL_MS);
   bindEvents();
   loadDriveForm();
   renderHome();
