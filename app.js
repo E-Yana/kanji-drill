@@ -29,7 +29,7 @@ const FIRST_CORRECT_DAYS = 7;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v21";
+const APP_VERSION = "v22";
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
 // 受け口が ok を返した日、または共有/ダウンロードを実行した日。Drive に入った保証は受け口 ok の時のみ
@@ -788,7 +788,7 @@ function importFromText(text) {
   try {
     data = parseImportText(text);
   } catch (e) {
-    return { ok: false, msg: "JSONを読み取れませんでした。Geminiの出力をそのまま貼り付けてください。" };
+    return { ok: false, msg: "JSONを読み取れませんでした。Claudeの出力をそのまま貼り付けてください。" };
   }
   let added = 0;
   let skipped = 0;
@@ -879,6 +879,81 @@ async function importInboxOnce() {
   // 出題中の画面を消さないよう、ホーム表示中だけ描き直す
   const home = document.getElementById("screen-home");
   if (added + fixed > 0 && home && !home.classList.contains("hidden")) renderHome();
+}
+
+let driveImportBusy = false; // 取り込み待ちの読み込み中（起動時と手動ボタンの重なり防止）
+
+/** 受け口へ送って応答本文を返す（時間切れ・オフライン・非200は null） */
+async function postToReceiver(req) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), DRIVE_TIMEOUT_MS);
+  try {
+    const res = await fetch(req.url, Object.assign({ signal: ctrl.signal }, req.options));
+    if (!res.ok) return null;
+    return await res.text();
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * ドライブの取り込み待ちファイル（claude.ai の写真変換スキルが置く）を取り込む。
+ * 読めたファイルは id を driveImportSeen に入れてから importFromText に通し（同じ保存に乗る）、ゴミ箱へ送る。
+ * 戻り値: {ok, msg, added, held, bad} または ドライブ未設定なら null
+ */
+async function importFromDrive() {
+  const settings = DrillBackup.parseDriveSettings(safeGetDriveSync());
+  if (!settings || driveImportBusy) return null;
+  driveImportBusy = true;
+  try {
+    const text = await postToReceiver(DriveImport.buildListRequest(settings, BACKUP_APP_ID));
+    const list = text === null ? { ok: false } : DriveImport.parseListResponse(text);
+    if (!list.ok) return { ok: false, msg: "ドライブを よめませんでした。あとで もう一度 ためしてね。", added: 0, held: 0, bad: [] };
+    const doneIds = [];
+    const bad = list.skipped.slice();
+    let added = 0;
+    let held = 0;
+    for (const f of list.files) {
+      if ((store.meta.driveImportSeen || []).includes(f.id)) {
+        doneIds.push(f.id); // 取り込み済みだがゴミ箱移動が失敗していた分
+        continue;
+      }
+      try {
+        parseImportText(f.content); // 先に解釈できるかだけ確かめる
+      } catch (e) {
+        bad.push(f.name); // 読めないファイルは消さず、記録もしない
+        continue;
+      }
+      store.meta.driveImportSeen = DriveImport.rememberSeen(store.meta.driveImportSeen, f.id);
+      const before = store.imported.length;
+      const pendingBefore = loadPending().length;
+      importFromText(f.content); // 中の saveStore() で driveImportSeen も一緒に保存される
+      added += store.imported.length - before;
+      held += loadPending().length - pendingBefore;
+      doneIds.push(f.id);
+    }
+    if (doneIds.length) await postToReceiver(DriveImport.buildDoneRequest(settings, BACKUP_APP_ID, doneIds));
+    const msg =
+      (added || held ? `写真から ${added}問 とりこみました。` : "ドライブに 新しい問題は ありませんでした。") +
+      (held ? `${held}問は ⚙の「たしかめて とりこむ」で たしかめてね。` : "") +
+      (bad.length ? `よめない ファイル: ${bad.join("、")}` : "");
+    return { ok: bad.length === 0, msg, added, held, bad }; // 読めないファイルがあれば赤で出す
+  } finally {
+    driveImportBusy = false;
+  }
+}
+
+/** 起動時の取り込み。何か入った時だけホームに1行出す（出題中の画面は描き直さない） */
+async function importFromDriveOnStart() {
+  const res = await importFromDrive();
+  if (!res || (res.added + res.held === 0 && res.bad.length === 0)) return;
+  const note = document.getElementById("home-import-note");
+  note.textContent = "📥 " + res.msg;
+  note.className = "form-msg " + (res.ok ? "ok" : "ng");
+  const home = document.getElementById("screen-home");
+  if (home && !home.classList.contains("hidden")) renderHome();
 }
 
 /** 1問だけ手入力で追加 */
@@ -1423,6 +1498,20 @@ function bindEvents() {
   document.getElementById("btn-vocab-quit").addEventListener("click", renderHome);
   document.getElementById("btn-vocab-next").addEventListener("click", nextVocabQuestion);
 
+  // 管理: ドライブの取り込み待ちを手で読む
+  document.getElementById("btn-drive-import").addEventListener("click", async () => {
+    const msgEl = document.getElementById("drive-import-msg");
+    msgEl.textContent = "ドライブを よんでいます…";
+    msgEl.className = "form-msg";
+    const res = await importFromDrive();
+    if (!res) {
+      flashMsg("drive-import-msg", { ok: false, msg: "下の「ドライブの せってい」が まだです（またはよみこみ中）。" });
+      return;
+    }
+    flashMsg("drive-import-msg", res);
+    renderManageList();
+    renderPendingList();
+  });
   // 管理: 取り込み
   document.getElementById("btn-import").addEventListener("click", () => {
     const text = document.getElementById("import-text").value;
@@ -1468,6 +1557,7 @@ function bindEvents() {
 function main() {
   seedPriorityOnce(); // 同梱の優先問題を初回だけ投入
   importInboxOnce(); // 公開サイトの追加問題を取り込む（失敗しても無視）
+  importFromDriveOnStart(); // ドライブの取り込み待ち（写真から）を取り込む（未設定・失敗なら何もしない）
   bindEvents();
   loadDriveForm();
   renderHome();

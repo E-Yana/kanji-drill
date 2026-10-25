@@ -63,6 +63,7 @@
     <button id="home-backup-reminder" class="text-btn backup-reminder hidden">💾 そろそろ きろくを ほぞんして おくと安心です（タップ）</button>
     <button id="btn-backup-home" class="text-btn">💾 きろくを ほぞん</button>
     <p id="home-backup-status" class="form-msg"></p>
+    <p id="home-import-note" class="form-msg ok hidden"></p>
 
     <button id="btn-manage" class="text-btn">⚙ 問題のとりこみ・せってい</button>
     <p id="app-version" class="muted small version-label"></p>
@@ -144,10 +145,16 @@
     </div>
 
     <div class="panel">
-      <h2>① Geminiの けっかを はりつけて とりこむ</h2>
+      <h2>① 写真から とりこむ</h2>
       <p class="muted small">
-        漢字ドリル/ノートの まちがいを 写真にとり、Geminiに 書き起こしてもらった
-        JSONを そのまま下に はりつけて「とりこむ」を おしてください。
+        漢字ドリル/ノートの まちがいを 写真にとり、Claudeアプリに はりつけると、
+        Claudeが ドライブの「漢字Apps」に 問題を おきます。アプリを ひらくと 自動で とりこみます
+        （下の「ドライブの せってい」が すんでいる時）。すぐ とりこみたい時は このボタン。
+      </p>
+      <button id="btn-drive-import" class="mid-btn primary">📥 ドライブから とりこむ</button>
+      <p id="drive-import-msg" class="form-msg"></p>
+      <p class="muted small">
+        ドライブが つかえない時は、Claudeが 書き出した JSONを 下に はりつけて「とりこむ」を おしてください。
         とりこんだ字は つぎの日から いちばん先に 出ます。
       </p>
       <textarea id="import-text" rows="7" placeholder='[ { "prompt": "目を{__}ます", "answer": "覚", "reading": "さ", "word": "覚ます" } ]'></textarea>
@@ -231,6 +238,7 @@
 <script src="backup.js"></script>
 <script src="queue.js"></script>
 <script src="problem_fix.js"></script>
+<script src="drive_import.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // service worker: オフラインで使えるよう、アプリ一式をキャッシュする
 // 中身を更新したら CACHE バージョン名を上げること（古いキャッシュを破棄）
-const CACHE = "kanji-drill-v21";
+const CACHE = "kanji-drill-v22";
 // 必須アセット（必ずキャッシュ）。priority_data.js（旧・非公開の控え）は公開版には無いことがある→任意扱い。追加問題は inbox.json（ネット優先）
 const ASSETS = [
   "./",
@@ -10,6 +10,7 @@ const ASSETS = [
   "./backup.js",
   "./queue.js",
   "./problem_fix.js",
+  "./drive_import.js",
   "./kanji_data.js",
   "./grade3_data.js",
   "./vocab_data.js",

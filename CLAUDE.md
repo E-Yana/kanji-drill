@@ -12,6 +12,13 @@
 4. コミットして公開する。web版Claude Codeは別の枝にpushするため、**GitHubで「マージ」を押すと公開される**。公開後、iPadでアプリを開くと自動で入る
 5. 取り込み済みの問題を直したい時は、同じ id を書き換えず（取り込み済みの id は二度と読まれない）、下の `fixes` に足す
 
+## 写真から取り込む（2026-10-25〜・v22・コピペ不要）
+- claude.ai アプリに写真を貼る → スキル `kanji-photo-to-json` が JSON 配列にして、Drive の「漢字Apps」に `kanji_drill_import_<日時>.json` を置く（Drive コネクタの create_file・変換なし）
+- アプリは起動時（と管理画面の「📥 ドライブから とりこむ」）に、受け口の `import_list` で取り込み待ちを読み、貼り付けと同じ `importFromText` に通す（検査に掛かった行は編集カードへ）→ `import_done` でゴミ箱へ。ドライブの設定（`kanjiDrill_driveSync`）が無い端末では何もしない
+- 読んだファイルの Drive id は `store.meta.driveImportSeen`（直近50件）。解釈できた時点で足し、取り込みと同じ保存に乗せる＝ゴミ箱移動が失敗しても二重に入らない。JSON として読めないファイルは消さず、名前を出す
+- 通信の形は `drive_import.js`（`window.DriveImport`・試験 `tests/drive_import_test.js`）。ファイル名の約束 `kanji_drill_import_*.json` は受け口・スキルと同じ文字列
+- Drive のフォルダ id はこのリポジトリ（公開）に書かない
+
 ## 取り込み済みの問題を直す（2026-10-24〜・v20）
 - iPadの中の問題（取り込み分）は、`inbox.json` の `fixes` に足すと次の起動で直る。id・学習記録・要復習の印は残る
   `{ "match": { "prompt": "車に{__}。", "answer": "乗" }, "set": { "prompt": "車に{__}る。" } }`
