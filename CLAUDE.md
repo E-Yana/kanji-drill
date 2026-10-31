@@ -33,6 +33,13 @@
 - ルールを変えたら `tests/fixtures/problem_cases.json`（10/24の実例11件＋正しい問題）に見本を足し、`for f in tests/*_test.js; do node "$f" || exit 1; done`
 - ⚠️ 検査は配当学年の外の漢字を見ない。かな交じり（衣ふく）は「確認」に出るが正しい
 
+## ホームのれんぞく欄と「できた／おやすみ」（2026-11-01〜・v25）
+- 処理は `week.js`（`window.DrillWeek`・試験 `tests/week_test.js`）。**都道府県ドリル `progress.js` の `studyDates`・`recentDays`・`shownStreak`・`stepRestKind`（と補助の日付関数）の写し**＝`backup.js` と同じ扱いで、ずれたら両方直す
+- 🔥の数字は `shownStreak`（最後が今日か昨日なら `meta.streak`、休み明け・記録なしは 0）。保存値 `meta.streak` は変えない。バックアップ要約の `streak` も表示値、`lastStudyDate` はそのまま
+- 7日の●○は id が `v-` で始まらないカード（漢字）の `history` の日付だけ。ことばクイズは数えない（連続日数を数えるのが漢字テストだけなので）
+- `renderHome` は問題0件の時、`stepRestKind` で「✅ きょうの ぶん できた」（＋おわったよ！の案内）か「💤 きょうは おやすみ」に分け、ボタンに `rest` クラス（灰色）。ことばクイズも同様（「🗣 ことばクイズ できた！」／「🗣 ことばは おやすみ」）
+- 旧表示（問題0件を一律「問題なし」と出す文言）は廃止。やり終えた日が「おやすみ」に見える不具合の原因だった
+
 ## 守ること
 - `app.js` の `APP_VERSION` と `sw.js` の `CACHE` は対で上げる（アプリ本体を変えた時だけ。`inbox.json` だけの更新は不要）
 - `priority_data.js` は旧・非公開の控え（git管理外）。新しい問題は入れない

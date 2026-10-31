@@ -29,7 +29,8 @@ const FIRST_CORRECT_DAYS = 7;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v24";
+const APP_VERSION = "v25";
+const WEEK_DOT_DAYS = 6; // れんぞく欄の●○は、この日数前〜今日（＝直近7日）
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
 // 受け口が ok を返した日、または共有/ダウンロードを実行した日。Drive に入った保証は受け口 ok の時のみ
@@ -283,6 +284,24 @@ function showScreen(name) {
 }
 
 // --- ホーム画面 ----------------------------------------------
+/** ホームと要約に出す連続日数（休み明けは 0。保存値 meta.streak は変えない） */
+function shownStreakToday() {
+  return DrillWeek.shownStreak(store.meta.streak, store.meta.lastStudyDate, todayStr());
+}
+/** れんぞく欄の直近7日（曜日の下に ●=答えた日／○=答えていない日。今日は枠つき。漢字カードだけ数える＝ことばクイズ id "v-" は除く） */
+function renderHomeWeek() {
+  const histories = Object.entries(store.progress)
+    .filter(([id]) => !id.startsWith("v-"))
+    .map(([, c]) => c.history);
+  const days = DrillWeek.recentDays(DrillWeek.studyDates(histories), todayStr(), WEEK_DOT_DAYS);
+  document.getElementById("home-week").innerHTML = days
+    .map(
+      (d) =>
+        `<span class="week-day${d.isToday ? " today" : ""}">` +
+        `<span class="week-wd">${d.weekday}</span><span class="week-mark${d.studied ? " studied" : ""}">${d.studied ? "●" : "○"}</span></span>`
+    )
+    .join("");
+}
 function renderHome() {
   const queue = buildQueue();
   const today = todayStr();
@@ -290,17 +309,21 @@ function renderHome() {
   const finishedToday =
     session && session.date === today && session.index >= session.ids.length;
 
-  document.getElementById("home-streak").textContent = store.meta.streak || 0;
+  document.getElementById("home-streak").textContent = shownStreakToday();
+  renderHomeWeek();
   document.getElementById("home-mastered").textContent = masteredCount();
   document.getElementById("home-count").textContent = queue.length;
   document.getElementById("home-vocab-mastered").textContent = vocabMasteredCount();
 
   const btnStart = document.getElementById("btn-start");
   const doneNote = document.getElementById("home-done-note");
+  btnStart.classList.toggle("rest", queue.length === 0);
   if (queue.length === 0) {
+    // 問題0件：今日やり終えた日は「できた」、やっていない日は「おやすみ」（どちらも押せない）
+    const done = DrillWeek.stepRestKind(session, today) === "done";
     btnStart.disabled = true;
-    btnStart.textContent = "今日の問題はありません";
-    doneNote.classList.add("hidden");
+    btnStart.textContent = done ? "✅ きょうの ぶん できた" : "💤 きょうは おやすみ";
+    doneNote.classList.toggle("hidden", !done);
   } else if (finishedToday) {
     btnStart.disabled = false;
     btnStart.textContent = "もう一度ふくしゅうする";
@@ -321,9 +344,11 @@ function renderHome() {
   const vocabFinishedToday =
     vSession && vSession.date === today && vSession.index >= vSession.ids.length;
   const btnVocabHome = document.getElementById("btn-vocab-home");
+  btnVocabHome.classList.toggle("rest", vocabQueue.length === 0);
   if (vocabQueue.length === 0) {
+    const vocabDone = DrillWeek.stepRestKind(vSession, today) === "done";
     btnVocabHome.disabled = true;
-    btnVocabHome.textContent = "🗣 ことばは おやすみ";
+    btnVocabHome.textContent = vocabDone ? "🗣 ことばクイズ できた！" : "🗣 ことばは おやすみ";
   } else if (vocabFinishedToday) {
     btnVocabHome.disabled = false;
     btnVocabHome.textContent = "🗣 ことばクイズ おわったよ！もう一度";
@@ -1215,7 +1240,7 @@ function buildBackupSummary() {
       wrongCount: x.c.wrongCount,
       box: x.c.box,
     })),
-    streak: store.meta.streak || 0,
+    streak: shownStreakToday(),
     lastStudyDate: store.meta.lastStudyDate || null,
   };
 }
