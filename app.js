@@ -29,7 +29,7 @@ const FIRST_CORRECT_DAYS = 7;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v25";
+const APP_VERSION = "v26";
 const WEEK_DOT_DAYS = 6; // れんぞく欄の●○は、この日数前〜今日（＝直近7日）
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
@@ -302,6 +302,35 @@ function renderHomeWeek() {
     )
     .join("");
 }
+/** すすみぐあいの帯に出す4つのまとまり（名前・問題の配列）。ことばの id は "v-" 付きのまま */
+function homeProgressGroups() {
+  return [
+    { name: "3年の ふくしゅう", problems: window.GRADE3_PROBLEMS || [] },
+    { name: "4年（もとから）", problems: window.SEED_PROBLEMS || [] },
+    { name: "学校の ドリル", problems: store.imported },
+    { name: "ことば", problems: allVocabProblems() },
+  ];
+}
+/** ホームの「すすみぐあい」: まとまりごとの3色の帯（問題0件のまとまりは出さない） */
+function renderHomeProgress() {
+  const rows = homeProgressGroups()
+    .map((g) => ({ name: g.name, c: KanjiHomeProgress.bandCounts(g.problems, store.progress) }))
+    .filter((r) => r.c.total > 0)
+    .map((r) => {
+      const pct = (n) => (n / r.c.total) * 100;
+      return (
+        `<div class="band-row"><span class="band-name">${r.name}</span>` +
+        `<span class="band-bar"><span class="band-seg mastered" style="width:${pct(r.c.mastered)}%"></span>` +
+        `<span class="band-seg practicing" style="width:${pct(r.c.practicing)}%"></span></span>` +
+        `<span class="band-count">${r.c.mastered}/${r.c.total}</span></div>`
+      );
+    });
+  const legend =
+    '<p class="band-legend"><span class="band-key mastered">■</span> おぼえた ' +
+    '<span class="band-key practicing">■</span> れんしゅうちゅう ' +
+    '<span class="band-key unseen">■</span> まだ</p>';
+  document.getElementById("home-progress-bands").innerHTML = rows.join("") + legend;
+}
 function renderHome() {
   const queue = buildQueue();
   const today = todayStr();
@@ -311,6 +340,7 @@ function renderHome() {
 
   document.getElementById("home-streak").textContent = shownStreakToday();
   renderHomeWeek();
+  renderHomeProgress();
   document.getElementById("home-mastered").textContent = masteredCount();
   document.getElementById("home-count").textContent = queue.length;
   document.getElementById("home-vocab-mastered").textContent = vocabMasteredCount();

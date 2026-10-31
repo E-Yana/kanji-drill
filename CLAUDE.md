@@ -40,6 +40,12 @@
 - `renderHome` は問題0件の時、`stepRestKind` で「✅ きょうの ぶん できた」（＋おわったよ！の案内）か「💤 きょうは おやすみ」に分け、ボタンに `rest` クラス（灰色）。ことばクイズも同様（「🗣 ことばクイズ できた！」／「🗣 ことばは おやすみ」）
 - 旧表示（問題0件を一律「問題なし」と出す文言）は廃止。やり終えた日が「おやすみ」に見える不具合の原因だった
 
+## ホームの「すすみぐあい」（2026-11-01〜・v26）
+- 処理は `home_progress.js`（`window.KanjiHomeProgress.bandCounts`・試験 `tests/home_progress_test.js`）。`week.js` と違い**漢字ドリル専用**（他アプリへの写しは無い）
+- 3色の意味：mastered＝箱4以上（「⭐ おぼえた」＝`masteredCount` と同じ基準）／practicing＝`history` が1回以上で箱3以下／unseen＝カードが無い、または `history` が空。問題の id で `store.progress` を引く
+- `renderHomeProgress`（`renderHome` から呼ぶ）が4本（3年＝`GRADE3_PROBLEMS`／4年もとから＝`SEED_PROBLEMS`／学校のドリル＝`store.imported`／ことば＝`VOCAB_PROBLEMS`）を出す。ことばの id は "v-" 付きのまま引く。全体0件の行は出さない
+- 色は style.css の `.band-seg.mastered`（`--main`）・`.practicing`（`#8fb0d6`）・下地の灰（`#e3e8ef`）。`state` とバックアップの形は変えていない
+
 ## 守ること
 - `app.js` の `APP_VERSION` と `sw.js` の `CACHE` は対で上げる（アプリ本体を変えた時だけ。`inbox.json` だけの更新は不要）
 - `priority_data.js` は旧・非公開の控え（git管理外）。新しい問題は入れない
