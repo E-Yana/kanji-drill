@@ -29,7 +29,7 @@ const FIRST_CORRECT_DAYS = 7;
 const BLANK_TOKEN = "{__}"; // 例文中の「書く場所」を表す印
 // アプリの表示用バージョン。中身を更新したら sw.js の CACHE と対で必ずインクリメントする
 // （ホーム画面に表示することで、iPad側で更新が反映されたか目視確認できるようにする）
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 const WEEK_DOT_DAYS = 6; // れんぞく欄の●○は、この日数前〜今日（＝直近7日）
 const INBOX_URL = "inbox.json"; // 公開サイトに置く追加問題ファイル
 const BACKUP_APP_ID = "kanji-drill"; // バックアップJSONの app 値
@@ -547,8 +547,36 @@ function revealAnswer() {
 }
 
 /** 自己採点（ok=できた / false=まちがえた） */
+// ---- 効果音（sound.js） ----
+// 効果音を鳴らす。sound.js が読めない時も学習は止めない
+function playSound(kind) {
+  try {
+    if (window.DrillSound) window.DrillSound[kind]();
+  } catch (e) {
+    /* 音が鳴らないだけ */
+  }
+}
+
+// ホームの「おと」ボタンの表示を現在の状態に合わせる
+function renderSoundToggle() {
+  const btn = document.getElementById("btn-sound");
+  if (!btn || !window.DrillSound) return;
+  btn.textContent = window.DrillSound.isOn() ? "🔊 おと: オン" : "🔇 おと: オフ";
+}
+
+// 「おと」ボタン: オン/オフを切り替える（オンにした時は確認音を1回鳴らす）
+function toggleSound() {
+  if (!window.DrillSound) return;
+  const next = !window.DrillSound.isOn();
+  window.DrillSound.setOn(next);
+  renderSoundToggle();
+  if (next) playSound("correct");
+}
+
 function gradeCurrent(ok) {
   const id = quizState.ids[quizState.index];
+  // 自己採点の×はブザーにせず柔らかい音（正直に×を押しにくくしない）
+  playSound(ok ? "correct" : "soft");
   recordAnswer(id, ok);
   quizState.results[id] = ok ? "o" : "x";
   // セッション進捗を保存
@@ -718,6 +746,7 @@ function selectVocabChoice(choice, p, btnEl) {
     else if (b === btnEl && !ok) b.classList.add("ng");
   });
 
+  playSound(ok ? "correct" : "wrong");
   recordAnswer(p.id, ok);
   vocabState.results[p.id] = ok ? "o" : "x";
   vocabState.index += 1;
@@ -1581,6 +1610,8 @@ function bindEvents() {
   // ホーム
   document.getElementById("btn-start").addEventListener("click", startSession);
   document.getElementById("btn-manage").addEventListener("click", openManage);
+  document.getElementById("btn-sound").addEventListener("click", toggleSound);
+  renderSoundToggle();
   document.getElementById("btn-vocab-home").addEventListener("click", startVocabSession);
   // 「きろくを ほぞん」と促しバナーのタップは、どちらも保存を直接実行する
   document.getElementById("btn-backup-home").addEventListener("click", saveBackup);

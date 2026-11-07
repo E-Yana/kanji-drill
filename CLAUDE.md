@@ -58,3 +58,8 @@
 - 復元前の退避は `kanjiDrill_v1_restore_<日付>[_n]`（新しい2本だけ残る）。戻したい時は、その値を `kanjiDrill_v1` に書き戻す
 - 復元しても `inboxSeen` は合算しない（バックアップ後に足した inbox の問題は復元後に取り込み直される）
 - 結果画面の自動送信（v24〜）：漢字・ことばクイズの結果画面に入ったら、ドライブ設定済みの時だけ裏で送る（`autoBackupToDrive`・入口は `enterResultScreen`）。仕様は `.claude/rules/home-apps.md` の自動送信の行と同じ。写真の取り込み（`driveImportBusy`）とは旗が別
+
+## 効果音（2026-11-07〜・v27）
+- `sound.js`（`window.DrillSound`: correct/wrong/soft/isOn/setOn）。Web Audio で合成（音声ファイルなし・音量 gain 0.15）。ON/OFF は localStorage の `kanjiDrill_sound`（既定オン・バックアップ/復元の対象外）。ホームの「おと」ボタンで切替
+- 鳴らす場所: `gradeCurrent`（○=correct／×=soft）と `selectVocabChoice`（correct/wrong）。自己採点の×はブザーにせず柔らかい音（soft）にする（正直に×を押しにくくしない）
+- iPadのマナー/消音スイッチがオンだと Web Audio は鳴らない。AudioContext は最初に鳴らす時に作る
